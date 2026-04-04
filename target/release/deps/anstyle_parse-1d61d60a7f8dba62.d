@@ -1,0 +1,11 @@
+D:\Downloads\tersineasıl\target\release\deps\anstyle_parse-1d61d60a7f8dba62.d: C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+D:\Downloads\tersineasıl\target\release\deps\libanstyle_parse-1d61d60a7f8dba62.rlib: C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+D:\Downloads\tersineasıl\target\release\deps\libanstyle_parse-1d61d60a7f8dba62.rmeta: C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs:
+C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs:
+C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs:
+C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs:
+C:\Users\sidal\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs:

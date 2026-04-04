@@ -7,3 +7,4 @@ authors = ["Security Researcher"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+pelite = "0.10"
