@@ -192,6 +192,17 @@ fn main() {
     );
     println!();
 
+    // ── OOM Koruması: Pumped malware savunması (256 MB limit) ──
+    const MAX_FILE_SIZE: u64 = 268_435_456; // 256 MB
+    if file_size > MAX_FILE_SIZE {
+        eprintln!(
+            "\n  [HATA] Dosya boyutu çok büyük ({:.2} MB). RAM limitini (256 MB) aşıyor.\
+             \n         Analiz reddedildi.\n",
+            file_size as f64 / (1024.0 * 1024.0)
+        );
+        process::exit(1);
+    }
+
     // ── Dosyayı belleğe oku ──
     let file_data = match fs::read(file_path) {
         Ok(data) => data,
@@ -647,7 +658,7 @@ fn print_import_table(dll_data: &[DllImportInfo]) {
 /// Performans için en fazla `MAX_STRINGS_TO_SCAN` string döndürür.
 fn extract_ascii_strings(data: &[u8]) -> Vec<String> {
     let mut strings: Vec<String> = Vec::new();
-    let mut current = Vec::new();
+    let mut current: Vec<u8> = Vec::new();
 
     for &byte in data {
         // Yazdırılabilir ASCII aralığı: 0x20 (boşluk) – 0x7E (~)
@@ -655,14 +666,18 @@ fn extract_ascii_strings(data: &[u8]) -> Vec<String> {
             current.push(byte);
         } else {
             if current.len() >= MIN_STRING_LENGTH {
-                if let Ok(s) = String::from_utf8(current.clone()) {
+                // Zero-copy: sahipliği al, clone yok → O(1) bellek transferi
+                let taken = std::mem::take(&mut current);
+                if let Ok(s) = String::from_utf8(taken) {
                     strings.push(s);
                     if strings.len() >= MAX_STRINGS_TO_SCAN {
                         break;
                     }
                 }
+                // from_utf8 başarısız olursa current zaten boşaltılmış durumda
+            } else {
+                current.clear();
             }
-            current.clear();
         }
     }
 
@@ -723,13 +738,22 @@ fn scan_suspicious_patterns(strings: &[String]) -> Vec<SuspiciousString> {
         for mat in re_ipv4.find_iter(s) {
             let ip = mat.as_str();
             // Loopback ve yaygın false-positive'leri atla
-            if ip != "0.0.0.0" && ip != "127.0.0.1" && ip != "255.255.255.255" {
-                findings.push(SuspiciousString {
-                    value: ip.to_string(),
-                    category: "IP Adresi",
-                    severity: "KRİTİK",
-                });
+            if ip == "0.0.0.0" || ip == "127.0.0.1" || ip == "255.255.255.255" {
+                continue;
             }
+
+            // Private vs Public IP sınıflandırması (RFC 1918)
+            let (category, severity) = if is_private_ip(ip) {
+                ("İç Ağ IP Adresi", "ORTA")
+            } else {
+                ("IP Adresi", "KRİTİK")
+            };
+
+            findings.push(SuspiciousString {
+                value: ip.to_string(),
+                category,
+                severity,
+            });
         }
 
         // URL tespiti
@@ -902,13 +926,15 @@ fn analyze_strings(data: &[u8]) {
     println!("    ├─ Şüpheli Bulgu      : {}", findings.len());
 
     let ip_count = findings.iter().filter(|f| f.category == "IP Adresi").count();
+    let private_ip_count = findings.iter().filter(|f| f.category == "İç Ağ IP Adresi").count();
     let url_count = findings.iter().filter(|f| f.category == "URL / Bağlantı").count();
     let exe_count = findings.iter().filter(|f| f.category == "Çalıştırılabilir Dosya").count();
     let email_count = findings.iter().filter(|f| f.category == "E-Posta Adresi").count();
     let reg_count = findings.iter().filter(|f| f.category == "Registry Yolu").count();
     let path_count = findings.iter().filter(|f| f.category == "Dosya Yolu").count();
 
-    if ip_count > 0 { println!("    │  ├─ IP Adresleri     : {}", ip_count); }
+    if ip_count > 0 { println!("    │  ├─ Public IP        : {}", ip_count); }
+    if private_ip_count > 0 { println!("    │  ├─ İç Ağ IP        : {}", private_ip_count); }
     if url_count > 0 { println!("    │  ├─ URL'ler          : {}", url_count); }
     if exe_count > 0 { println!("    │  ├─ Çalıştırılabilir  : {}", exe_count); }
     if email_count > 0 { println!("    │  ├─ E-Posta          : {}", email_count); }
@@ -933,6 +959,29 @@ fn analyze_strings(data: &[u8]) {
 // ═══════════════════════════════════════════════════════════════
 //  YARDIMCI FONKSİYONLAR
 // ═══════════════════════════════════════════════════════════════
+
+/// RFC 1918 Private IP bloklarını kontrol eder.
+/// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 (link-local)
+fn is_private_ip(ip: &str) -> bool {
+    let octets: Vec<u8> = ip
+        .split('.')
+        .filter_map(|o| o.parse::<u8>().ok())
+        .collect();
+
+    if octets.len() != 4 {
+        return false;
+    }
+
+    let (a, b) = (octets[0], octets[1]);
+
+    matches!(
+        (a, b),
+        (10, _)                         // 10.0.0.0/8
+        | (172, 16..=31)                 // 172.16.0.0/12
+        | (192, 168)                     // 192.168.0.0/16
+        | (169, 254)                     // 169.254.0.0/16 (Link-Local)
+    )
+}
 
 fn format_number(n: u32) -> String {
     let s = n.to_string();
