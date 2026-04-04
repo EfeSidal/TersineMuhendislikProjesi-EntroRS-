@@ -7,6 +7,7 @@ use std::process;
 //  tersine — Zararlı Yazılım Statik Analiz Aracı (Entropy Checker)
 //  Aşama 1: Proje İskeleti & CLI Kurulumu
 //  Aşama 2: PE (Portable Executable) Analizi
+//  Aşama 3: Matematiksel Motor — Shannon Entropisi
 // ─────────────────────────────────────────────────────────────
 
 /// Zararlı yazılım statik analiz aracı.
@@ -103,11 +104,52 @@ fn main() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  MATEMATİKSEL MOTOR — SHANNON ENTROPİSİ
+// ═══════════════════════════════════════════════════════════════
+
+/// Verilen byte dizisinin Shannon Entropisini hesaplar.
+///
+/// Formül: H(X) = - Σ P(xᵢ) × log₂(P(xᵢ))
+///
+/// Sonuç 0.0 (tamamen homojen veri) ile 8.0 (tamamen rastgele veri)
+/// arasında bir f64 değer döner.
+///
+/// - 0.0       : Tüm byte'lar aynı (sıfır bilgi içeriği)
+/// - ~3.5–5.0  : Normal derlenmiş kod / yapılandırılmış veri
+/// - ~6.0–7.0  : Sıkıştırılmış veri veya yoğun kod
+/// - ~7.0–8.0  : Yüksek entropi — paketlenmiş, şifrelenmiş veya obfuscate edilmiş
+fn calculate_entropy(data: &[u8]) -> f64 {
+    if data.is_empty() {
+        return 0.0;
+    }
+
+    let len = data.len() as f64;
+
+    // Her byte değerinin (0–255) frekansını say
+    let mut freq = [0u64; 256];
+    for &byte in data {
+        freq[byte as usize] += 1;
+    }
+
+    // Shannon Entropisi: H = - Σ P(x) × log₂(P(x))
+    let mut entropy: f64 = 0.0;
+    for &count in &freq {
+        if count == 0 {
+            continue;
+        }
+        let p = count as f64 / len;
+        entropy -= p * p.log2();
+    }
+
+    entropy
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  PE ANALİZ FONKSİYONLARI
 // ═══════════════════════════════════════════════════════════════
 
 /// Verilen byte verisini PE formatı olarak parse eder ve
-/// bölüm (section) bilgilerini tablo formatında yazdırır.
+/// bölüm (section) bilgilerini entropi ile birlikte yazdırır.
 fn analyze_pe(data: &[u8]) {
     println!("  ── PE (Portable Executable) Analizi ──────────────────────");
     println!();
@@ -127,11 +169,11 @@ fn analyze_pe(data: &[u8]) {
     if let Ok(pe64) = pelite::pe64::PeFile::from_bytes(data) {
         println!("  ✔ Geçerli PE dosyası tespit edildi: PE32+ (64-bit)");
         println!();
-        print_sections_64(&pe64);
+        print_sections_64(&pe64, data);
     } else if let Ok(pe32) = pelite::pe32::PeFile::from_bytes(data) {
         println!("  ✔ Geçerli PE dosyası tespit edildi: PE32 (32-bit)");
         println!();
-        print_sections_32(&pe32);
+        print_sections_32(&pe32, data);
     } else {
         eprintln!("  [UYARI] Bu geçerli bir Windows PE dosyası değil.");
         eprintln!("          Dosya MZ imzasına sahip ancak PE yapısı bozuk veya tanınmıyor.");
@@ -141,70 +183,149 @@ fn analyze_pe(data: &[u8]) {
     }
 }
 
-/// 64-bit PE dosyasının bölümlerini tablo formatında yazdırır.
-fn print_sections_64(pe: &pelite::pe64::PeFile) {
+/// 64-bit PE dosyasının bölümlerini entropi ile birlikte yazdırır.
+fn print_sections_64(pe: &pelite::pe64::PeFile, file_data: &[u8]) {
     use pelite::pe64::Pe;
 
     let sections = pe.section_headers();
-
-    // .image() ile &[IMAGE_SECTION_HEADER] slice'ına erişip len() alıyoruz
     let section_count = sections.image().len();
 
-    // .iter() ile SectionHeader iterator'ü alıyoruz
-    // SectionHeader, Deref<Target = IMAGE_SECTION_HEADER> implemente eder
-    // bu sayede .Name, .SizeOfRawData, .VirtualSize alanlarına erişebiliriz
-    print_section_table(section_count, sections.iter().map(|s| {
+    let rows: Vec<SectionRow> = sections.iter().map(|s| {
         let name = s.name().unwrap_or_else(|bytes| {
             std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
         });
-        (name.to_string(), s.SizeOfRawData, s.VirtualSize)
-    }));
+
+        // Bölümün diskteki ham verisini al (file_range)
+        let range = s.file_range();
+        let start = range.start as usize;
+        let end = range.end as usize;
+        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
+            &file_data[start..end]
+        } else {
+            &[]
+        };
+
+        let entropy = calculate_entropy(section_data);
+
+        SectionRow {
+            name: name.to_string(),
+            raw_size: s.SizeOfRawData,
+            virtual_size: s.VirtualSize,
+            entropy,
+        }
+    }).collect();
+
+    print_section_table(section_count, &rows);
 }
 
-/// 32-bit PE dosyasının bölümlerini tablo formatında yazdırır.
-fn print_sections_32(pe: &pelite::pe32::PeFile) {
+/// 32-bit PE dosyasının bölümlerini entropi ile birlikte yazdırır.
+fn print_sections_32(pe: &pelite::pe32::PeFile, file_data: &[u8]) {
     use pelite::pe32::Pe;
 
     let sections = pe.section_headers();
     let section_count = sections.image().len();
 
-    print_section_table(section_count, sections.iter().map(|s| {
+    let rows: Vec<SectionRow> = sections.iter().map(|s| {
         let name = s.name().unwrap_or_else(|bytes| {
             std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
         });
-        (name.to_string(), s.SizeOfRawData, s.VirtualSize)
-    }));
+
+        let range = s.file_range();
+        let start = range.start as usize;
+        let end = range.end as usize;
+        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
+            &file_data[start..end]
+        } else {
+            &[]
+        };
+
+        let entropy = calculate_entropy(section_data);
+
+        SectionRow {
+            name: name.to_string(),
+            raw_size: s.SizeOfRawData,
+            virtual_size: s.VirtualSize,
+            entropy,
+        }
+    }).collect();
+
+    print_section_table(section_count, &rows);
+}
+
+/// Bölüm tablosu satırı için veri yapısı.
+struct SectionRow {
+    name: String,
+    raw_size: u32,
+    virtual_size: u32,
+    entropy: f64,
+}
+
+/// Entropi değerine göre seviye etiketi döndürür.
+fn entropy_label(entropy: f64) -> &'static str {
+    if entropy > 7.0 {
+        "[!] Yüksek Entropi (Paketlenmiş/Şifrelenmiş)"
+    } else if entropy > 6.0 {
+        "[~] Sıkıştırılmış/Yoğun Veri"
+    } else {
+        ""
+    }
 }
 
 /// Bölüm tablosu çıktısını oluşturur (hem 32 hem 64-bit için ortak).
-fn print_section_table(
-    section_count: usize,
-    sections: impl Iterator<Item = (String, u32, u32)>,
-) {
+fn print_section_table(section_count: usize, rows: &[SectionRow]) {
     println!(
-        "  ── Bölüm Tablosu ({} bölüm bulundu) ──────────────────",
+        "  ── Bölüm Tablosu ({} bölüm bulundu) ──────────────────────────────────",
         section_count
     );
     println!();
     println!(
-        "  {:<4} {:<14} {:>18} {:>22}",
-        "#", "Bölüm Adı", "Raw Size (Disk)", "Virtual Size (Bellek)"
+        "  {:<4} {:<12} {:>14} {:>14} {:>10}   {}",
+        "#", "Bölüm Adı", "Raw Size", "Virtual Size", "Entropy", "Durum"
     );
-    println!("  {}", "─".repeat(62));
+    println!("  {}", "─".repeat(88));
 
-    for (i, (name, raw_size, virtual_size)) in sections.enumerate() {
+    for (i, row) in rows.iter().enumerate() {
+        let label = entropy_label(row.entropy);
+
         println!(
-            "  {:<4} {:<14} {:>12} bytes {:>14} bytes",
+            "  {:<4} {:<12} {:>10} B {:>10} B {:>10.4}   {}",
             i + 1,
-            name,
-            format_number(raw_size),
-            format_number(virtual_size)
+            row.name,
+            format_number(row.raw_size),
+            format_number(row.virtual_size),
+            row.entropy,
+            label
         );
     }
 
-    println!("  {}", "─".repeat(62));
+    println!("  {}", "─".repeat(88));
     println!();
-    println!("  [BİLGİ] PE bölüm analizi tamamlandı.");
+
+    // ── Entropi Özet İstatistikleri ──
+    if !rows.is_empty() {
+        let entropies: Vec<f64> = rows.iter().map(|r| r.entropy).collect();
+        let max_e = entropies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_e = entropies.iter().cloned().fold(f64::INFINITY, f64::min);
+        let avg_e = entropies.iter().sum::<f64>() / entropies.len() as f64;
+        let high_count = entropies.iter().filter(|&&e| e > 7.0).count();
+
+        println!("  ── Entropi Özeti ─────────────────────────────────────────");
+        println!("    ├─ En Düşük  : {:.4}", min_e);
+        println!("    ├─ Ortalama  : {:.4}", avg_e);
+        println!("    ├─ En Yüksek : {:.4}", max_e);
+
+        if high_count > 0 {
+            println!(
+                "    └─ ⚠ {} bölüm yüksek entropiye sahip (>7.0) — Paketleme/şifreleme şüphesi!",
+                high_count
+            );
+        } else {
+            println!("    └─ ✔ Yüksek entropi tespit edilmedi.");
+        }
+        println!();
+    }
+
+    println!("  [BİLGİ] PE bölüm analizi ve entropi taraması tamamlandı.");
     println!();
 }
 
