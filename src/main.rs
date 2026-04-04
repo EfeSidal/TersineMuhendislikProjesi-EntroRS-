@@ -8,7 +8,103 @@ use std::process;
 //  Aşama 1: Proje İskeleti & CLI Kurulumu
 //  Aşama 2: PE (Portable Executable) Analizi
 //  Aşama 3: Matematiksel Motor — Shannon Entropisi
+//  Aşama 4: Import Address Table (IAT) Analizi
 // ─────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+//  ŞÜPHELİ API LİSTESİ — Zararlı Yazılımlarda Sık Kullanılan
+// ═══════════════════════════════════════════════════════════════
+
+/// Zararlı yazılımlarda sıkça kullanılan şüpheli Windows API fonksiyonları.
+/// Bu listedeki fonksiyonlar tespit edildiğinde [!] KRİTİK API ÇAĞRISI uyarısı verilir.
+const SUSPICIOUS_APIS: &[&str] = &[
+    // ── Bellek Manipülasyonu ──
+    "VirtualAlloc",
+    "VirtualAllocEx",
+    "VirtualProtect",
+    "VirtualProtectEx",
+    "VirtualFree",
+    // ── Süreç Enjeksiyonu ──
+    "CreateRemoteThread",
+    "CreateRemoteThreadEx",
+    "WriteProcessMemory",
+    "ReadProcessMemory",
+    "NtWriteVirtualMemory",
+    "QueueUserAPC",
+    // ── DLL / Kod Yükleme ──
+    "LoadLibraryA",
+    "LoadLibraryW",
+    "LoadLibraryExA",
+    "LoadLibraryExW",
+    "GetProcAddress",
+    "LdrLoadDll",
+    // ── Süreç / Thread Yönetimi ──
+    "OpenProcess",
+    "CreateProcessA",
+    "CreateProcessW",
+    "ShellExecuteA",
+    "ShellExecuteW",
+    "WinExec",
+    "CreateThread",
+    "SuspendThread",
+    "ResumeThread",
+    "TerminateProcess",
+    // ── Dosya Sistemi ──
+    "CreateFileA",
+    "CreateFileW",
+    "WriteFile",
+    "DeleteFileA",
+    "DeleteFileW",
+    "MoveFileA",
+    "MoveFileW",
+    // ── Kayıt Defteri (Registry) ──
+    "RegOpenKeyExA",
+    "RegOpenKeyExW",
+    "RegSetValueExA",
+    "RegSetValueExW",
+    "RegCreateKeyExA",
+    "RegCreateKeyExW",
+    // ── Ağ / İnternet ──
+    "InternetOpenA",
+    "InternetOpenW",
+    "InternetOpenUrlA",
+    "InternetOpenUrlW",
+    "HttpOpenRequestA",
+    "HttpSendRequestA",
+    "URLDownloadToFileA",
+    "URLDownloadToFileW",
+    "WSAStartup",
+    "connect",
+    "send",
+    "recv",
+    // ── Anti-Debug / Anti-Analysis ──
+    "IsDebuggerPresent",
+    "CheckRemoteDebuggerPresent",
+    "NtQueryInformationProcess",
+    "GetTickCount",
+    "QueryPerformanceCounter",
+    "OutputDebugStringA",
+    // ── Kripto / Şifreleme ──
+    "CryptEncrypt",
+    "CryptDecrypt",
+    "CryptAcquireContextA",
+    "CryptCreateHash",
+    // ── Token / Yetki Yükseltme ──
+    "AdjustTokenPrivileges",
+    "OpenProcessToken",
+    "LookupPrivilegeValueA",
+    // ── Servis Yönetimi ──
+    "CreateServiceA",
+    "CreateServiceW",
+    "StartServiceA",
+    "StartServiceW",
+    // ── Pano / Keylogger ──
+    "SetWindowsHookExA",
+    "SetWindowsHookExW",
+    "GetAsyncKeyState",
+    "GetKeyState",
+    "GetClipboardData",
+];
 
 /// Zararlı yazılım statik analiz aracı.
 /// Verilen dosyanın entropi profilini çıkararak
@@ -113,11 +209,6 @@ fn main() {
 ///
 /// Sonuç 0.0 (tamamen homojen veri) ile 8.0 (tamamen rastgele veri)
 /// arasında bir f64 değer döner.
-///
-/// - 0.0       : Tüm byte'lar aynı (sıfır bilgi içeriği)
-/// - ~3.5–5.0  : Normal derlenmiş kod / yapılandırılmış veri
-/// - ~6.0–7.0  : Sıkıştırılmış veri veya yoğun kod
-/// - ~7.0–8.0  : Yüksek entropi — paketlenmiş, şifrelenmiş veya obfuscate edilmiş
 fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -149,12 +240,12 @@ fn calculate_entropy(data: &[u8]) -> f64 {
 // ═══════════════════════════════════════════════════════════════
 
 /// Verilen byte verisini PE formatı olarak parse eder ve
-/// bölüm (section) bilgilerini entropi ile birlikte yazdırır.
+/// bölüm bilgilerini, entropi ve IAT analizini yazdırır.
 fn analyze_pe(data: &[u8]) {
     println!("  ── PE (Portable Executable) Analizi ──────────────────────");
     println!();
 
-    // MZ imzası kontrolü (PE dosyasının ilk 2 byte'ı "MZ" olmalı)
+    // MZ imzası kontrolü
     if data.len() < 2 || data[0] != b'M' || data[1] != b'Z' {
         eprintln!("  [UYARI] Bu geçerli bir Windows PE dosyası değil.");
         eprintln!("          Dosya \"MZ\" imzası ile başlamıyor.");
@@ -165,15 +256,16 @@ fn analyze_pe(data: &[u8]) {
     }
 
     // pelite ile PE'yi parse et
-    // Önce 64-bit (PE32+) olarak dene, başarısız olursa 32-bit (PE32) dene
     if let Ok(pe64) = pelite::pe64::PeFile::from_bytes(data) {
         println!("  ✔ Geçerli PE dosyası tespit edildi: PE32+ (64-bit)");
         println!();
         print_sections_64(&pe64, data);
+        analyze_imports_64(&pe64);
     } else if let Ok(pe32) = pelite::pe32::PeFile::from_bytes(data) {
         println!("  ✔ Geçerli PE dosyası tespit edildi: PE32 (32-bit)");
         println!();
         print_sections_32(&pe32, data);
+        analyze_imports_32(&pe32);
     } else {
         eprintln!("  [UYARI] Bu geçerli bir Windows PE dosyası değil.");
         eprintln!("          Dosya MZ imzasına sahip ancak PE yapısı bozuk veya tanınmıyor.");
@@ -182,6 +274,10 @@ fn analyze_pe(data: &[u8]) {
         process::exit(1);
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+//  BÖLÜM (SECTION) ANALİZİ
+// ─────────────────────────────────────────────────────────────
 
 /// 64-bit PE dosyasının bölümlerini entropi ile birlikte yazdırır.
 fn print_sections_64(pe: &pelite::pe64::PeFile, file_data: &[u8]) {
@@ -194,8 +290,6 @@ fn print_sections_64(pe: &pelite::pe64::PeFile, file_data: &[u8]) {
         let name = s.name().unwrap_or_else(|bytes| {
             std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
         });
-
-        // Bölümün diskteki ham verisini al (file_range)
         let range = s.file_range();
         let start = range.start as usize;
         let end = range.end as usize;
@@ -204,9 +298,7 @@ fn print_sections_64(pe: &pelite::pe64::PeFile, file_data: &[u8]) {
         } else {
             &[]
         };
-
         let entropy = calculate_entropy(section_data);
-
         SectionRow {
             name: name.to_string(),
             raw_size: s.SizeOfRawData,
@@ -229,7 +321,6 @@ fn print_sections_32(pe: &pelite::pe32::PeFile, file_data: &[u8]) {
         let name = s.name().unwrap_or_else(|bytes| {
             std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
         });
-
         let range = s.file_range();
         let start = range.start as usize;
         let end = range.end as usize;
@@ -238,9 +329,7 @@ fn print_sections_32(pe: &pelite::pe32::PeFile, file_data: &[u8]) {
         } else {
             &[]
         };
-
         let entropy = calculate_entropy(section_data);
-
         SectionRow {
             name: name.to_string(),
             raw_size: s.SizeOfRawData,
@@ -271,7 +360,7 @@ fn entropy_label(entropy: f64) -> &'static str {
     }
 }
 
-/// Bölüm tablosu çıktısını oluşturur (hem 32 hem 64-bit için ortak).
+/// Bölüm tablosu çıktısını oluşturur.
 fn print_section_table(section_count: usize, rows: &[SectionRow]) {
     println!(
         "  ── Bölüm Tablosu ({} bölüm bulundu) ──────────────────────────────────",
@@ -286,7 +375,6 @@ fn print_section_table(section_count: usize, rows: &[SectionRow]) {
 
     for (i, row) in rows.iter().enumerate() {
         let label = entropy_label(row.entropy);
-
         println!(
             "  {:<4} {:<12} {:>10} B {:>10} B {:>10.4}   {}",
             i + 1,
@@ -326,6 +414,244 @@ fn print_section_table(section_count: usize, rows: &[SectionRow]) {
     }
 
     println!("  [BİLGİ] PE bölüm analizi ve entropi taraması tamamlandı.");
+    println!();
+}
+
+// ─────────────────────────────────────────────────────────────
+//  IAT (IMPORT ADDRESS TABLE) ANALİZİ
+// ─────────────────────────────────────────────────────────────
+
+/// DLL başına gösterilecek maksimum fonksiyon sayısı.
+const MAX_FUNCTIONS_PER_DLL: usize = 10;
+
+/// Bir fonksiyon adının şüpheli API listesinde olup olmadığını kontrol eder.
+fn is_suspicious_api(name: &str) -> bool {
+    SUSPICIOUS_APIS.iter().any(|&api| api == name)
+}
+
+/// 64-bit PE dosyasının import tablosunu analiz eder.
+fn analyze_imports_64(pe: &pelite::pe64::PeFile) {
+    use pelite::pe64::Pe;
+
+    let imports = match pe.imports() {
+        Ok(imports) => imports,
+        Err(_) => {
+            println!("  [BİLGİ] Import tablosu bulunamadı veya okunamadı.");
+            println!();
+            return;
+        }
+    };
+
+    let mut dll_data: Vec<DllImportInfo> = Vec::new();
+
+    for desc in imports {
+        let dll_name = match desc.dll_name() {
+            Ok(name) => name.to_str().unwrap_or("<bilinmeyen>").to_string(),
+            Err(_) => continue,
+        };
+
+        let int = match desc.int() {
+            Ok(int) => int,
+            Err(_) => continue,
+        };
+
+        let mut functions: Vec<FunctionInfo> = Vec::new();
+        for import in int {
+            if let Ok(import) = import {
+                match import {
+                    pelite::pe64::imports::Import::ByName { name, .. } => {
+                        let fn_name = name.to_str().unwrap_or("<bilinmeyen>").to_string();
+                        let suspicious = is_suspicious_api(&fn_name);
+                        functions.push(FunctionInfo { name: fn_name, suspicious });
+                    }
+                    pelite::pe64::imports::Import::ByOrdinal { ord } => {
+                        functions.push(FunctionInfo {
+                            name: format!("Ordinal({})", ord),
+                            suspicious: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        dll_data.push(DllImportInfo {
+            dll_name,
+            functions,
+        });
+    }
+
+    print_import_table(&dll_data);
+}
+
+/// 32-bit PE dosyasının import tablosunu analiz eder.
+fn analyze_imports_32(pe: &pelite::pe32::PeFile) {
+    use pelite::pe32::Pe;
+
+    let imports = match pe.imports() {
+        Ok(imports) => imports,
+        Err(_) => {
+            println!("  [BİLGİ] Import tablosu bulunamadı veya okunamadı.");
+            println!();
+            return;
+        }
+    };
+
+    let mut dll_data: Vec<DllImportInfo> = Vec::new();
+
+    for desc in imports {
+        let dll_name = match desc.dll_name() {
+            Ok(name) => name.to_str().unwrap_or("<bilinmeyen>").to_string(),
+            Err(_) => continue,
+        };
+
+        let int = match desc.int() {
+            Ok(int) => int,
+            Err(_) => continue,
+        };
+
+        let mut functions: Vec<FunctionInfo> = Vec::new();
+        for import in int {
+            if let Ok(import) = import {
+                match import {
+                    pelite::pe32::imports::Import::ByName { name, .. } => {
+                        let fn_name = name.to_str().unwrap_or("<bilinmeyen>").to_string();
+                        let suspicious = is_suspicious_api(&fn_name);
+                        functions.push(FunctionInfo { name: fn_name, suspicious });
+                    }
+                    pelite::pe32::imports::Import::ByOrdinal { ord } => {
+                        functions.push(FunctionInfo {
+                            name: format!("Ordinal({})", ord),
+                            suspicious: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        dll_data.push(DllImportInfo {
+            dll_name,
+            functions,
+        });
+    }
+
+    print_import_table(&dll_data);
+}
+
+/// DLL import bilgisi.
+struct DllImportInfo {
+    dll_name: String,
+    functions: Vec<FunctionInfo>,
+}
+
+/// Fonksiyon bilgisi.
+struct FunctionInfo {
+    name: String,
+    suspicious: bool,
+}
+
+/// Import tablosunu ağaç yapısında yazdırır.
+fn print_import_table(dll_data: &[DllImportInfo]) {
+    println!("  ── Import Address Table (IAT) Analizi ────────────────────");
+    println!();
+
+    if dll_data.is_empty() {
+        println!("    Import tablosu boş veya bulunamadı.");
+        println!();
+        return;
+    }
+
+    let total_dlls = dll_data.len();
+    let total_functions: usize = dll_data.iter().map(|d| d.functions.len()).sum();
+    let total_suspicious: usize = dll_data
+        .iter()
+        .flat_map(|d| d.functions.iter())
+        .filter(|f| f.suspicious)
+        .count();
+
+    println!(
+        "  ✔ {} DLL, toplam {} fonksiyon tespit edildi.",
+        total_dlls, total_functions
+    );
+    println!();
+
+    for (dll_idx, dll) in dll_data.iter().enumerate() {
+        let is_last_dll = dll_idx == total_dlls - 1;
+        let dll_prefix = if is_last_dll { "└─" } else { "├─" };
+        let child_prefix = if is_last_dll { "   " } else { "│  " };
+
+        // DLL'deki şüpheli fonksiyon sayısını hesapla
+        let dll_suspicious_count = dll.functions.iter().filter(|f| f.suspicious).count();
+        let dll_warning = if dll_suspicious_count > 0 {
+            format!("  ⚠ {} şüpheli API", dll_suspicious_count)
+        } else {
+            String::new()
+        };
+
+        println!(
+            "  {} 📦 {} ({} fonksiyon){}",
+            dll_prefix,
+            dll.dll_name,
+            dll.functions.len(),
+            dll_warning
+        );
+
+        let display_count = dll.functions.len().min(MAX_FUNCTIONS_PER_DLL);
+        let remaining = dll.functions.len().saturating_sub(MAX_FUNCTIONS_PER_DLL);
+
+        for (fn_idx, func) in dll.functions.iter().take(display_count).enumerate() {
+            let is_last_fn = fn_idx == display_count - 1 && remaining == 0;
+            let fn_prefix = if is_last_fn { "└─" } else { "├─" };
+
+            if func.suspicious {
+                println!(
+                    "  {} {} {} [!] KRİTİK API ÇAĞRISI",
+                    child_prefix, fn_prefix, func.name
+                );
+            } else {
+                println!(
+                    "  {} {} {}",
+                    child_prefix, fn_prefix, func.name
+                );
+            }
+        }
+
+        if remaining > 0 {
+            println!(
+                "  {} └─ ... ve {} fonksiyon daha",
+                child_prefix, remaining
+            );
+        }
+
+        println!();
+    }
+
+    // ── IAT Özet ──
+    println!("  ── IAT Özeti ─────────────────────────────────────────────");
+    println!("    ├─ Toplam DLL       : {}", total_dlls);
+    println!("    ├─ Toplam Fonksiyon : {}", total_functions);
+
+    if total_suspicious > 0 {
+        println!(
+            "    └─ ⚠ {} şüpheli/kritik API çağrısı tespit edildi!",
+            total_suspicious
+        );
+        println!();
+
+        // Şüpheli fonksiyonların özetini yazdır
+        println!("  ── Tespit Edilen Kritik API Çağrıları ────────────────────");
+        for dll in dll_data {
+            for func in &dll.functions {
+                if func.suspicious {
+                    println!("    [!] {} → {}", dll.dll_name, func.name);
+                }
+            }
+        }
+    } else {
+        println!("    └─ ✔ Şüpheli API çağrısı tespit edilmedi.");
+    }
+
+    println!();
+    println!("  [BİLGİ] IAT analizi tamamlandı.");
     println!();
 }
 
