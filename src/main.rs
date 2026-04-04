@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process;
 
 // ─────────────────────────────────────────────────────────────
-//  tersine — Zararlı Yazılım Statik Analiz Aracı (Entropy Checker)
+//  EntroRS — Zararlı Yazılım Statik Analiz Aracı (Entropy Checker)
 //  Aşama 1: Proje İskeleti & CLI Kurulumu
 //  Aşama 2: PE (Portable Executable) Analizi
 //  Aşama 3: Matematiksel Motor — Shannon Entropisi
@@ -122,7 +122,7 @@ const MAX_STRINGS_TO_DISPLAY: usize = 30;
 /// Zararlı yazılım statik analiz aracı.
 #[derive(Parser, Debug)]
 #[command(
-    name = "tersine",
+    name = "EntroRS",
     version,
     about = "Zararlı Yazılım Statik Analiz Aracı — Entropy Checker",
     long_about = "Çalıştırılabilir dosyaların entropi profilini analiz ederek \
@@ -145,7 +145,7 @@ fn main() {
         eprintln!(
             "\n  [HATA] Belirtilen dosya bulunamadı: \"{}\"\n\
              \n  Lütfen dosya yolunu kontrol edip tekrar deneyin.\n\
-             \n  Kullanım: tersine --file <DOSYA_YOLU>\n",
+             \n  Kullanım: EntroRS --file <DOSYA_YOLU>\n",
             file_path.display()
         );
         process::exit(1);
@@ -695,7 +695,7 @@ fn scan_suspicious_patterns(strings: &[String]) -> Vec<SuspiciousString> {
 
     // URL: http:// veya https:// ile başlayan
     let re_url = Regex::new(
-        r"https?://[^\s<>\"\x00-\x1f]{3,}"
+        r#"https?://[^\s<>"\x00-\x1f]{3,}"#
     ).expect("URL regex derleme hatası");
 
     // Çalıştırılabilir dosya uzantıları
@@ -715,7 +715,7 @@ fn scan_suspicious_patterns(strings: &[String]) -> Vec<SuspiciousString> {
 
     // Dosya yolları (C:\... veya \\...) 
     let re_filepath = Regex::new(
-        r"(?i)([A-Z]:\\[^\s<>\"]{5,}|\\\\[^\s<>\"]{5,})"
+        r#"(?i)([A-Z]:\\[^\s<>"]{5,}|\\\\[^\s<>"]{5,})"#
     ).expect("Dosya yolu regex derleme hatası");
 
     for s in strings {
@@ -951,12 +951,12 @@ fn print_banner() {
         r#"
   ╔══════════════════════════════════════════════════════════╗
   ║                                                          ║
-  ║    ████████╗███████╗██████╗ ███████╗██╗███╗   ██╗███████╗║
-  ║    ╚══██╔══╝██╔════╝██╔══██╗██╔════╝██║████╗  ██║██╔════╝║
-  ║       ██║   █████╗  ██████╔╝███████╗██║██╔██╗ ██║█████╗  ║
-  ║       ██║   ██╔══╝  ██╔══██╗╚════██║██║██║╚██╗██║██╔══╝  ║
-  ║       ██║   ███████╗██║  ██║███████║██║██║ ╚████║███████╗║
-  ║       ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝║
+  ║   ███████╗███╗   ██╗████████╗██████╗  ██████╗ ██████╗ ███████╗║
+  ║   ██╔════╝████╗  ██║╚══██╔══╝██╔══██╗██╔═══██╗██╔══██╗██╔════╝║
+  ║   █████╗  ██╔██╗ ██║   ██║   ██████╔╝██║   ██║██████╔╝███████╗║
+  ║   ██╔══╝  ██║╚██╗██║   ██║   ██╔══██╗██║   ██║██╔══██╗╚════██║║
+  ║   ███████╗██║ ╚████║   ██║   ██║  ██║╚██████╔╝██║  ██║███████║║
+  ║   ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝║
   ║                                                          ║
   ║   Zararlı Yazılım Statik Analiz Aracı — Entropy Checker  ║
   ║                                                          ║
