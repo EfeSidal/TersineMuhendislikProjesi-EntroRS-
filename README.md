@@ -1,12 +1,13 @@
-# 🦀 TERSİNE - Static Malware Analysis & PE Analyzer
+# 🦀 EntroRS - Static Malware Analysis & PE Analyzer
 
-[🇹🇷 Türkçe](https://www.google.com/search?q=%23t%C3%BCrk%C3%A7e) | [🇬🇧 English](https://www.google.com/search?q=%23english)
+[🇹🇷 Türkçe](#turkce) | [🇬🇧 English](#english)
 
 ---
 
+<a id="turkce"></a>
 ## 🇹🇷 Türkçe
 
-Tersine, Rust diliyle geliştirilmiş, Windows PE (Portable Executable) dosyaları üzerinde çalışan, imza tabanlı ve sezgisel (heuristic) statik analiz gerçekleştiren yüksek performanslı bir güvenlik aracıdır.
+EntroRS, Rust diliyle geliştirilmiş, Windows PE (Portable Executable) dosyaları üzerinde çalışan, imza tabanlı ve sezgisel (heuristic) statik analiz gerçekleştiren yüksek performanslı bir güvenlik aracıdır.
 
 ### 🚀 Özellikler
 *   **PE Header Analizi:** Dosya mimarisi (x86/x64) ve temel meta verilerin tespiti.
@@ -26,26 +27,35 @@ Bu matematiksel model, verinin rastgelelik seviyesini 0.0 ile 8.0 arasında puan
 ### 🛠 Kurulum ve Kullanım
 
 **Derleme (Release Mode):**
-`cargo build --release`
+```bash
+cargo build --release
+````
 
 **Çalıştırma:**
-`./target/release/tersine.exe --file <analiz_edilecek_dosya_yolu>`
 
----
+```bash
+./target/release/EntroRS.exe --file <analiz_edilecek_dosya_yolu>
+```
+
+-----
+
+\<a id="english"\>\</a\>
 
 ## 🇬🇧 English
 
-Tersine is a high-performance static malware analysis tool developed in Rust, capable of signature-based and heuristic static analysis on Windows PE (Portable Executable) files.
+EntroRS is a high-performance static malware analysis tool developed in Rust, capable of signature-based and heuristic static analysis on Windows PE (Portable Executable) files.
 
 ### 🚀 Features
-*   **PE Header Analysis:** File architecture (x86/x64) and basic metadata detection.
-*   **Section Parsing:** Raw Size vs Virtual Size correlation to identify potential packing.
-*   **Shannon Entropy:** Mathematical data density analysis to expose encrypted or packed sections.
-*   **IAT (Import Address Table) Analysis:** Mapping of externally imported system DLLs and functions.
-*   **Suspicious API Detection:** Automated flagging of critical functions such as anti-debugging (`IsDebuggerPresent`), memory manipulation (`VirtualAlloc`), and dynamic loading (`LoadLibraryA`).
-*   **Strings Analysis:** Regex-based extraction of hardcoded URLs, IP addresses, and critical file paths.
+
+  * **PE Header Analysis:** File architecture (x86/x64) and basic metadata detection.
+  * **Section Parsing:** Raw Size vs Virtual Size correlation to identify potential packing.
+  * **Shannon Entropy:** Mathematical data density analysis to expose encrypted or packed sections.
+  * **IAT (Import Address Table) Analysis:** Mapping of externally imported system DLLs and functions.
+  * **Suspicious API Detection:** Automated flagging of critical functions such as anti-debugging (`IsDebuggerPresent`), memory manipulation (`VirtualAlloc`), and dynamic loading (`LoadLibraryA`).
+  * **Strings Analysis:** Regex-based extraction of hardcoded URLs, IP addresses, and critical file paths.
 
 ### 📊 Technical Details: Entropy Engine
+
 This tool is built upon the core principles of the "Static Analysis" discipline in cybersecurity. To detect malware code obfuscation techniques, it applies the **Shannon Entropy** algorithm to each PE section:
 
 $$H(X) = - \sum P(x_i) \log_2 P(x_i)$$
@@ -55,7 +65,13 @@ This mathematical model scores the randomness of the data on a scale of 0.0 to 8
 ### 🛠 Installation and Usage
 
 **Build (Release Mode):**
-`cargo build --release`
+
+```bash
+cargo build --release
+```
 
 **Usage:**
-`./target/release/tersine.exe --file <target_file_path>`
+
+```bash
+./target/release/EntroRS.exe --file <target_file_path>
+```
