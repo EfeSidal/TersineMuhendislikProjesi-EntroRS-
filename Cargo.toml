@@ -1,0 +1,9 @@
+[package]
+name = "tersine"
+version = "0.1.0"
+edition = "2021"
+description = "Zararlı Yazılım Statik Analiz Aracı - Entropy Checker"
+authors = ["Security Researcher"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
