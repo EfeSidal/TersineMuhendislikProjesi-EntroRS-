@@ -1,5 +1,5 @@
 use clap::Parser;
-use regex::Regex;
+use goblin::pe::PE;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
@@ -7,10 +7,9 @@ use std::process;
 // ─────────────────────────────────────────────────────────────
 //  EntroRS — Zararlı Yazılım Statik Analiz Aracı (Entropy Checker)
 //  Aşama 1: Proje İskeleti & CLI Kurulumu
-//  Aşama 2: PE (Portable Executable) Analizi
+//  Aşama 2: PE (Portable Executable) Analizi — goblin ile
 //  Aşama 3: Matematiksel Motor — Shannon Entropisi
 //  Aşama 4: Import Address Table (IAT) Analizi
-//  Aşama 5: Strings Analysis — Metin Ayıklama & Şüpheli Desen Tarama
 // ─────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
@@ -105,19 +104,6 @@ const SUSPICIOUS_APIS: &[&str] = &[
     "GetKeyState",
     "GetClipboardData",
 ];
-
-// ═══════════════════════════════════════════════════════════════
-//  STRINGS ANALİZİ SABİTLERİ
-// ═══════════════════════════════════════════════════════════════
-
-/// String olarak kabul edilecek minimum karakter uzunluğu.
-const MIN_STRING_LENGTH: usize = 5;
-
-/// Performans için taranacak maksimum string sayısı.
-const MAX_STRINGS_TO_SCAN: usize = 1000;
-
-/// Genel string çıktısında gösterilecek maksimum string sayısı.
-const MAX_STRINGS_TO_DISPLAY: usize = 30;
 
 /// Zararlı yazılım statik analiz aracı.
 #[derive(Parser, Debug)]
@@ -217,8 +203,8 @@ fn main() {
         }
     };
 
-    // ── PE Analizi ──
-    analyze_pe(&file_data);
+    // ── Dosya Analizi (goblin ile otomatik format tespiti) ──
+    analyze_executable(&file_data);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -253,118 +239,110 @@ fn calculate_entropy(data: &[u8]) -> f64 {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  PE ANALİZ FONKSİYONLARI
+//  DOSYA ANALİZ FONKSİYONLARI (goblin)
 // ═══════════════════════════════════════════════════════════════
 
-/// Ana PE analiz fonksiyonu — tüm aşamaları sırayla çalıştırır.
-fn analyze_pe(data: &[u8]) {
-    println!("  ── PE (Portable Executable) Analizi ──────────────────────");
-    println!();
-
-    // MZ imzası kontrolü
-    if data.len() < 2 || data[0] != b'M' || data[1] != b'Z' {
-        eprintln!("  [UYARI] Bu geçerli bir Windows PE dosyası değil.");
-        eprintln!("          Dosya \"MZ\" imzası ile başlamıyor.");
-        eprintln!();
-        eprintln!("  İpucu: Bu araç şu anda yalnızca Windows PE (.exe, .dll, .sys)");
-        eprintln!("         dosyalarını desteklemektedir.");
-        process::exit(1);
+/// Ana analiz fonksiyonu — goblin ile dosya formatını otomatik tespit eder.
+fn analyze_executable(data: &[u8]) {
+    match goblin::Object::parse(data) {
+        Ok(goblin::Object::PE(pe)) => {
+            let bitness = if pe.is_64 { "PE32+ (64-bit)" } else { "PE32 (32-bit)" };
+            println!("  ── PE (Portable Executable) Analizi ──────────────────────");
+            println!();
+            println!("  ✔ Geçerli PE dosyası tespit edildi: {}", bitness);
+            println!();
+            analyze_pe_sections(&pe, data);
+            analyze_pe_imports(&pe);
+        }
+        Ok(goblin::Object::Elf(elf)) => {
+            let bitness = if elf.is_64 { "ELF64 (64-bit)" } else { "ELF32 (32-bit)" };
+            println!("  ── ELF (Executable and Linkable Format) Analizi ─────────");
+            println!();
+            println!("  ✔ Geçerli ELF dosyası tespit edildi: {}", bitness);
+            println!();
+            analyze_elf_sections(&elf, data);
+        }
+        Ok(_) => {
+            eprintln!("  [UYARI] Desteklenmeyen dosya formatı.");
+            eprintln!("          Bu araç PE ve ELF dosyalarını desteklemektedir.");
+            process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("  [UYARI] Dosya parse edilemedi: {}", e);
+            eprintln!();
+            eprintln!("  İpucu: Dosya korumalı, bozulmuş veya desteklenmeyen bir formatta olabilir.");
+            process::exit(1);
+        }
     }
-
-    // pelite ile PE'yi parse et
-    if let Ok(pe64) = pelite::pe64::PeFile::from_bytes(data) {
-        println!("  ✔ Geçerli PE dosyası tespit edildi: PE32+ (64-bit)");
-        println!();
-        print_sections_64(&pe64, data);
-        analyze_imports_64(&pe64);
-    } else if let Ok(pe32) = pelite::pe32::PeFile::from_bytes(data) {
-        println!("  ✔ Geçerli PE dosyası tespit edildi: PE32 (32-bit)");
-        println!();
-        print_sections_32(&pe32, data);
-        analyze_imports_32(&pe32);
-    } else {
-        eprintln!("  [UYARI] Bu geçerli bir Windows PE dosyası değil.");
-        eprintln!("          Dosya MZ imzasına sahip ancak PE yapısı bozuk veya tanınmıyor.");
-        eprintln!();
-        eprintln!("  İpucu: Dosya korumalı, bozulmuş veya desteklenmeyen bir formatta olabilir.");
-        process::exit(1);
-    }
-
-    // Aşama 5: Strings Analizi (PE türünden bağımsız, ham veri üzerinde çalışır)
-    analyze_strings(data);
 }
 
 // ─────────────────────────────────────────────────────────────
-//  BÖLÜM (SECTION) ANALİZİ
+//  PE BÖLÜM (SECTION) ANALİZİ
 // ─────────────────────────────────────────────────────────────
-
-/// 64-bit PE dosyasının bölümlerini entropi ile birlikte yazdırır.
-fn print_sections_64(pe: &pelite::pe64::PeFile, file_data: &[u8]) {
-    use pelite::pe64::Pe;
-
-    let sections = pe.section_headers();
-    let section_count = sections.image().len();
-
-    let rows: Vec<SectionRow> = sections.iter().map(|s| {
-        let name = s.name().unwrap_or_else(|bytes| {
-            std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
-        });
-        let range = s.file_range();
-        let start = range.start as usize;
-        let end = range.end as usize;
-        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
-            &file_data[start..end]
-        } else {
-            &[]
-        };
-        let entropy = calculate_entropy(section_data);
-        SectionRow {
-            name: name.to_string(),
-            raw_size: s.SizeOfRawData,
-            virtual_size: s.VirtualSize,
-            entropy,
-        }
-    }).collect();
-
-    print_section_table(section_count, &rows);
-}
-
-/// 32-bit PE dosyasının bölümlerini entropi ile birlikte yazdırır.
-fn print_sections_32(pe: &pelite::pe32::PeFile, file_data: &[u8]) {
-    use pelite::pe32::Pe;
-
-    let sections = pe.section_headers();
-    let section_count = sections.image().len();
-
-    let rows: Vec<SectionRow> = sections.iter().map(|s| {
-        let name = s.name().unwrap_or_else(|bytes| {
-            std::str::from_utf8(bytes).unwrap_or("<bilinmeyen>")
-        });
-        let range = s.file_range();
-        let start = range.start as usize;
-        let end = range.end as usize;
-        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
-            &file_data[start..end]
-        } else {
-            &[]
-        };
-        let entropy = calculate_entropy(section_data);
-        SectionRow {
-            name: name.to_string(),
-            raw_size: s.SizeOfRawData,
-            virtual_size: s.VirtualSize,
-            entropy,
-        }
-    }).collect();
-
-    print_section_table(section_count, &rows);
-}
 
 struct SectionRow {
     name: String,
     raw_size: u32,
     virtual_size: u32,
     entropy: f64,
+}
+
+/// PE dosyasının bölümlerini entropi ile birlikte analiz eder (goblin).
+fn analyze_pe_sections(pe: &PE, file_data: &[u8]) {
+    let sections = &pe.sections;
+    let section_count = sections.len();
+
+    let rows: Vec<SectionRow> = sections.iter().map(|s| {
+        let name = s.name().unwrap_or("<bilinmeyen>").to_string();
+        let start = s.pointer_to_raw_data as usize;
+        let raw_size = s.size_of_raw_data;
+        let end = start + raw_size as usize;
+        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
+            &file_data[start..end]
+        } else {
+            &[]
+        };
+        let entropy = calculate_entropy(section_data);
+        SectionRow {
+            name,
+            raw_size,
+            virtual_size: s.virtual_size,
+            entropy,
+        }
+    }).collect();
+
+    print_section_table(section_count, &rows);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ELF BÖLÜM (SECTION) ANALİZİ
+// ─────────────────────────────────────────────────────────────
+
+/// ELF dosyasının bölümlerini entropi ile birlikte analiz eder (goblin).
+fn analyze_elf_sections(elf: &goblin::elf::Elf, file_data: &[u8]) {
+    let sections = &elf.section_headers;
+    let section_count = sections.len();
+
+    let rows: Vec<SectionRow> = sections.iter().map(|s| {
+        let name = elf.shdr_strtab.get_at(s.sh_name).unwrap_or("<bilinmeyen>").to_string();
+        let start = s.sh_offset as usize;
+        let size = s.sh_size as usize;
+        let end = start + size;
+        let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
+            &file_data[start..end]
+        } else {
+            &[]
+        };
+        let entropy = calculate_entropy(section_data);
+        SectionRow {
+            name,
+            raw_size: size as u32,
+            virtual_size: s.sh_size as u32,
+            entropy,
+        }
+    }).collect();
+
+    print_section_table(section_count, &rows);
 }
 
 fn entropy_label(entropy: f64) -> &'static str {
@@ -428,118 +406,18 @@ fn print_section_table(section_count: usize, rows: &[SectionRow]) {
         println!();
     }
 
-    println!("  [BİLGİ] PE bölüm analizi ve entropi taraması tamamlandı.");
+    println!("  [BİLGİ] Bölüm analizi ve entropi taraması tamamlandı.");
     println!();
 }
 
 // ─────────────────────────────────────────────────────────────
-//  IAT (IMPORT ADDRESS TABLE) ANALİZİ
+//  PE IAT (IMPORT ADDRESS TABLE) ANALİZİ
 // ─────────────────────────────────────────────────────────────
 
 const MAX_FUNCTIONS_PER_DLL: usize = 10;
 
 fn is_suspicious_api(name: &str) -> bool {
     SUSPICIOUS_APIS.iter().any(|&api| api == name)
-}
-
-fn analyze_imports_64(pe: &pelite::pe64::PeFile) {
-    use pelite::pe64::Pe;
-
-    let imports = match pe.imports() {
-        Ok(imports) => imports,
-        Err(_) => {
-            println!("  [BİLGİ] Import tablosu bulunamadı veya okunamadı.");
-            println!();
-            return;
-        }
-    };
-
-    let mut dll_data: Vec<DllImportInfo> = Vec::new();
-
-    for desc in imports {
-        let dll_name = match desc.dll_name() {
-            Ok(name) => name.to_str().unwrap_or("<bilinmeyen>").to_string(),
-            Err(_) => continue,
-        };
-
-        let int = match desc.int() {
-            Ok(int) => int,
-            Err(_) => continue,
-        };
-
-        let mut functions: Vec<FunctionInfo> = Vec::new();
-        for import in int {
-            if let Ok(import) = import {
-                match import {
-                    pelite::pe64::imports::Import::ByName { name, .. } => {
-                        let fn_name = name.to_str().unwrap_or("<bilinmeyen>").to_string();
-                        let suspicious = is_suspicious_api(&fn_name);
-                        functions.push(FunctionInfo { name: fn_name, suspicious });
-                    }
-                    pelite::pe64::imports::Import::ByOrdinal { ord } => {
-                        functions.push(FunctionInfo {
-                            name: format!("Ordinal({})", ord),
-                            suspicious: false,
-                        });
-                    }
-                }
-            }
-        }
-
-        dll_data.push(DllImportInfo { dll_name, functions });
-    }
-
-    print_import_table(&dll_data);
-}
-
-fn analyze_imports_32(pe: &pelite::pe32::PeFile) {
-    use pelite::pe32::Pe;
-
-    let imports = match pe.imports() {
-        Ok(imports) => imports,
-        Err(_) => {
-            println!("  [BİLGİ] Import tablosu bulunamadı veya okunamadı.");
-            println!();
-            return;
-        }
-    };
-
-    let mut dll_data: Vec<DllImportInfo> = Vec::new();
-
-    for desc in imports {
-        let dll_name = match desc.dll_name() {
-            Ok(name) => name.to_str().unwrap_or("<bilinmeyen>").to_string(),
-            Err(_) => continue,
-        };
-
-        let int = match desc.int() {
-            Ok(int) => int,
-            Err(_) => continue,
-        };
-
-        let mut functions: Vec<FunctionInfo> = Vec::new();
-        for import in int {
-            if let Ok(import) = import {
-                match import {
-                    pelite::pe32::imports::Import::ByName { name, .. } => {
-                        let fn_name = name.to_str().unwrap_or("<bilinmeyen>").to_string();
-                        let suspicious = is_suspicious_api(&fn_name);
-                        functions.push(FunctionInfo { name: fn_name, suspicious });
-                    }
-                    pelite::pe32::imports::Import::ByOrdinal { ord } => {
-                        functions.push(FunctionInfo {
-                            name: format!("Ordinal({})", ord),
-                            suspicious: false,
-                        });
-                    }
-                }
-            }
-        }
-
-        dll_data.push(DllImportInfo { dll_name, functions });
-    }
-
-    print_import_table(&dll_data);
 }
 
 struct DllImportInfo {
@@ -552,10 +430,45 @@ struct FunctionInfo {
     suspicious: bool,
 }
 
-fn print_import_table(dll_data: &[DllImportInfo]) {
+/// PE dosyasının import tablosunu analiz eder (goblin).
+fn analyze_pe_imports(pe: &PE) {
     println!("  ── Import Address Table (IAT) Analizi ────────────────────");
     println!();
 
+    let imports = &pe.imports;
+    if imports.is_empty() {
+        println!("    Import tablosu boş veya bulunamadı.");
+        println!();
+        return;
+    }
+
+    // Import'ları DLL bazında grupla
+    let mut dll_map: std::collections::BTreeMap<String, Vec<FunctionInfo>> =
+        std::collections::BTreeMap::new();
+
+    for import in imports {
+        let dll_name = import.dll.to_string();
+        let fn_name = if import.name.is_empty() {
+            format!("Ordinal({})", import.ordinal)
+        } else {
+            import.name.to_string()
+        };
+        let suspicious = is_suspicious_api(&fn_name);
+        dll_map
+            .entry(dll_name)
+            .or_default()
+            .push(FunctionInfo { name: fn_name, suspicious });
+    }
+
+    let dll_data: Vec<DllImportInfo> = dll_map
+        .into_iter()
+        .map(|(dll_name, functions)| DllImportInfo { dll_name, functions })
+        .collect();
+
+    print_import_table(&dll_data);
+}
+
+fn print_import_table(dll_data: &[DllImportInfo]) {
     if dll_data.is_empty() {
         println!("    Import tablosu boş veya bulunamadı.");
         println!();
@@ -649,339 +562,9 @@ fn print_import_table(dll_data: &[DllImportInfo]) {
     println!();
 }
 
-// ─────────────────────────────────────────────────────────────
-//  STRINGS ANALİZİ — METİN AYIKLAMA & ŞÜPHELİ DESEN TARAMA
-// ─────────────────────────────────────────────────────────────
-
-/// Dosyanın ham byte verisinden ASCII stringleri ayıklar.
-/// Minimum `MIN_STRING_LENGTH` uzunluğundaki yazdırılabilir ASCII dizilerini toplar.
-/// Performans için en fazla `MAX_STRINGS_TO_SCAN` string döndürür.
-fn extract_ascii_strings(data: &[u8]) -> Vec<String> {
-    let mut strings: Vec<String> = Vec::new();
-    let mut current: Vec<u8> = Vec::new();
-
-    for &byte in data {
-        // Yazdırılabilir ASCII aralığı: 0x20 (boşluk) – 0x7E (~)
-        if byte >= 0x20 && byte <= 0x7E {
-            current.push(byte);
-        } else {
-            if current.len() >= MIN_STRING_LENGTH {
-                // Zero-copy: sahipliği al, clone yok → O(1) bellek transferi
-                let taken = std::mem::take(&mut current);
-                if let Ok(s) = String::from_utf8(taken) {
-                    strings.push(s);
-                    if strings.len() >= MAX_STRINGS_TO_SCAN {
-                        break;
-                    }
-                }
-                // from_utf8 başarısız olursa current zaten boşaltılmış durumda
-            } else {
-                current.clear();
-            }
-        }
-    }
-
-    // Son kalan buffer'ı kontrol et
-    if current.len() >= MIN_STRING_LENGTH && strings.len() < MAX_STRINGS_TO_SCAN {
-        if let Ok(s) = String::from_utf8(current) {
-            strings.push(s);
-        }
-    }
-
-    strings
-}
-
-/// Şüpheli string bulgusu.
-struct SuspiciousString {
-    value: String,
-    category: &'static str,
-    severity: &'static str,
-}
-
-/// Ayıklanan stringleri regex ile şüpheli desenler için tarar.
-fn scan_suspicious_patterns(strings: &[String]) -> Vec<SuspiciousString> {
-    let mut findings: Vec<SuspiciousString> = Vec::new();
-
-    // ── Regex Desenleri ──
-    // IPv4 adresi: 1.2.3.4 formatı (0.x.x.x ve 255.x.x.x dahil)
-    let re_ipv4 = Regex::new(
-        r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
-    ).expect("IPv4 regex derleme hatası");
-
-    // URL: http:// veya https:// ile başlayan
-    let re_url = Regex::new(
-        r#"https?://[^\s<>"\x00-\x1f]{3,}"#
-    ).expect("URL regex derleme hatası");
-
-    // Çalıştırılabilir dosya uzantıları
-    let re_exe_ext = Regex::new(
-        r"(?i)\b\w+\.(exe|dll|sys|bat|cmd|ps1|vbs|scr|pif|com|msi)\b"
-    ).expect("Dosya uzantısı regex derleme hatası");
-
-    // E-posta adresi
-    let re_email = Regex::new(
-        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-    ).expect("E-posta regex derleme hatası");
-
-    // Registry yolları
-    let re_registry = Regex::new(
-        r"(?i)(HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKLM|HKCU)\\[^\s]+"
-    ).expect("Registry regex derleme hatası");
-
-    // Dosya yolları (C:\... veya \\...) 
-    let re_filepath = Regex::new(
-        r#"(?i)([A-Z]:\\[^\s<>"]{5,}|\\\\[^\s<>"]{5,})"#
-    ).expect("Dosya yolu regex derleme hatası");
-
-    for s in strings {
-        // IP adresi tespiti
-        for mat in re_ipv4.find_iter(s) {
-            let ip = mat.as_str();
-            // Loopback ve yaygın false-positive'leri atla
-            if ip == "0.0.0.0" || ip == "127.0.0.1" || ip == "255.255.255.255" {
-                continue;
-            }
-
-            // Private vs Public IP sınıflandırması (RFC 1918)
-            let (category, severity) = if is_private_ip(ip) {
-                ("İç Ağ IP Adresi", "ORTA")
-            } else {
-                ("IP Adresi", "KRİTİK")
-            };
-
-            findings.push(SuspiciousString {
-                value: ip.to_string(),
-                category,
-                severity,
-            });
-        }
-
-        // URL tespiti
-        for mat in re_url.find_iter(s) {
-            findings.push(SuspiciousString {
-                value: mat.as_str().to_string(),
-                category: "URL / Bağlantı",
-                severity: "KRİTİK",
-            });
-        }
-
-        // Çalıştırılabilir dosya uzantısı
-        for mat in re_exe_ext.find_iter(s) {
-            let matched = mat.as_str();
-            // Çok kısa veya genel string'leri atla
-            if matched.len() > 4 {
-                findings.push(SuspiciousString {
-                    value: matched.to_string(),
-                    category: "Çalıştırılabilir Dosya",
-                    severity: "ORTA",
-                });
-            }
-        }
-
-        // E-posta adresi
-        for mat in re_email.find_iter(s) {
-            findings.push(SuspiciousString {
-                value: mat.as_str().to_string(),
-                category: "E-Posta Adresi",
-                severity: "ORTA",
-            });
-        }
-
-        // Registry yolu
-        for mat in re_registry.find_iter(s) {
-            findings.push(SuspiciousString {
-                value: mat.as_str().to_string(),
-                category: "Registry Yolu",
-                severity: "ORTA",
-            });
-        }
-
-        // Dosya yolu
-        for mat in re_filepath.find_iter(s) {
-            findings.push(SuspiciousString {
-                value: mat.as_str().to_string(),
-                category: "Dosya Yolu",
-                severity: "DÜŞÜK",
-            });
-        }
-    }
-
-    // Yinelenenleri kaldır (aynı value+category çifti)
-    findings.sort_by(|a, b| a.value.cmp(&b.value));
-    findings.dedup_by(|a, b| a.value == b.value && a.category == b.category);
-
-    findings
-}
-
-/// Strings analizini çalıştırır ve sonuçları ekrana yazdırır.
-fn analyze_strings(data: &[u8]) {
-    println!("  ── Strings Analizi (Metin Ayıklama) ──────────────────────");
-    println!();
-
-    // 1. ASCII stringleri ayıkla
-    let strings = extract_ascii_strings(data);
-    let total_strings = strings.len();
-
-    println!(
-        "  ✔ {} okunabilir ASCII string ayıklandı (min {} karakter).",
-        total_strings, MIN_STRING_LENGTH
-    );
-
-    if total_strings >= MAX_STRINGS_TO_SCAN {
-        println!(
-            "    ⓘ Performans limiti: İlk {} string tarandı.",
-            MAX_STRINGS_TO_SCAN
-        );
-    }
-    println!();
-
-    // 2. Genel string örneklerini göster
-    if !strings.is_empty() {
-        let show_count = strings.len().min(MAX_STRINGS_TO_DISPLAY);
-        let remaining = strings.len().saturating_sub(MAX_STRINGS_TO_DISPLAY);
-
-        println!("  ── Ayıklanan Stringler (ilk {}) ────────────────────────", show_count);
-        println!();
-
-        for (i, s) in strings.iter().take(show_count).enumerate() {
-            // Uzun stringleri kısalt
-            let display = if s.len() > 80 {
-                format!("{}...", &s[..77])
-            } else {
-                s.clone()
-            };
-            println!("    {:>4}. {}", i + 1, display);
-        }
-
-        if remaining > 0 {
-            println!();
-            println!("    ... ve {} string daha.", remaining);
-        }
-        println!();
-    }
-
-    // 3. Şüpheli desen taraması
-    let findings = scan_suspicious_patterns(&strings);
-
-    println!("  ── Şüpheli Metin Analizi ─────────────────────────────────");
-    println!();
-
-    if findings.is_empty() {
-        println!("    ✔ Şüpheli metin deseni tespit edilmedi.");
-        println!();
-    } else {
-        println!(
-            "    ⚠ {} şüpheli bulgu tespit edildi!\n",
-            findings.len()
-        );
-
-        // Bulguları önceliklere göre grupla
-        let critical: Vec<&SuspiciousString> =
-            findings.iter().filter(|f| f.severity == "KRİTİK").collect();
-        let medium: Vec<&SuspiciousString> =
-            findings.iter().filter(|f| f.severity == "ORTA").collect();
-        let low: Vec<&SuspiciousString> =
-            findings.iter().filter(|f| f.severity == "DÜŞÜK").collect();
-
-        if !critical.is_empty() {
-            println!("    ┌─ KRİTİK SEVİYE ──────────────────────────────────");
-            for f in &critical {
-                println!(
-                    "    │ [!] KRİTİK: {} → {}",
-                    f.category, f.value
-                );
-            }
-            println!("    └──────────────────────────────────────────────────");
-            println!();
-        }
-
-        if !medium.is_empty() {
-            println!("    ┌─ ORTA SEVİYE ───────────────────────────────────");
-            for f in &medium {
-                println!(
-                    "    │ [~] ORTA: {} → {}",
-                    f.category, f.value
-                );
-            }
-            println!("    └──────────────────────────────────────────────────");
-            println!();
-        }
-
-        if !low.is_empty() {
-            println!("    ┌─ DÜŞÜK SEVİYE ─────────────────────────────────");
-            for f in &low {
-                println!(
-                    "    │ [·] DÜŞÜK: {} → {}",
-                    f.category, f.value
-                );
-            }
-            println!("    └──────────────────────────────────────────────────");
-            println!();
-        }
-    }
-
-    // 4. Strings Özeti
-    println!("  ── Strings Özeti ─────────────────────────────────────────");
-    println!("    ├─ Toplam String       : {}", total_strings);
-    println!("    ├─ Şüpheli Bulgu      : {}", findings.len());
-
-    let ip_count = findings.iter().filter(|f| f.category == "IP Adresi").count();
-    let private_ip_count = findings.iter().filter(|f| f.category == "İç Ağ IP Adresi").count();
-    let url_count = findings.iter().filter(|f| f.category == "URL / Bağlantı").count();
-    let exe_count = findings.iter().filter(|f| f.category == "Çalıştırılabilir Dosya").count();
-    let email_count = findings.iter().filter(|f| f.category == "E-Posta Adresi").count();
-    let reg_count = findings.iter().filter(|f| f.category == "Registry Yolu").count();
-    let path_count = findings.iter().filter(|f| f.category == "Dosya Yolu").count();
-
-    if ip_count > 0 { println!("    │  ├─ Public IP        : {}", ip_count); }
-    if private_ip_count > 0 { println!("    │  ├─ İç Ağ IP        : {}", private_ip_count); }
-    if url_count > 0 { println!("    │  ├─ URL'ler          : {}", url_count); }
-    if exe_count > 0 { println!("    │  ├─ Çalıştırılabilir  : {}", exe_count); }
-    if email_count > 0 { println!("    │  ├─ E-Posta          : {}", email_count); }
-    if reg_count > 0 { println!("    │  ├─ Registry Yolları : {}", reg_count); }
-    if path_count > 0 { println!("    │  └─ Dosya Yolları    : {}", path_count); }
-
-    let critical_total = findings.iter().filter(|f| f.severity == "KRİTİK").count();
-    if critical_total > 0 {
-        println!(
-            "    └─ ⚠ {} kritik seviye bulgu — C2 sunucu bağlantısı veya payload indirme şüphesi!",
-            critical_total
-        );
-    } else {
-        println!("    └─ ✔ Kritik seviye bulgu tespit edilmedi.");
-    }
-
-    println!();
-    println!("  [BİLGİ] Strings analizi tamamlandı.");
-    println!();
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  YARDIMCI FONKSİYONLAR
 // ═══════════════════════════════════════════════════════════════
-
-/// RFC 1918 Private IP bloklarını kontrol eder.
-/// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 (link-local)
-fn is_private_ip(ip: &str) -> bool {
-    let octets: Vec<u8> = ip
-        .split('.')
-        .filter_map(|o| o.parse::<u8>().ok())
-        .collect();
-
-    if octets.len() != 4 {
-        return false;
-    }
-
-    let (a, b) = (octets[0], octets[1]);
-
-    matches!(
-        (a, b),
-        (10, _)                         // 10.0.0.0/8
-        | (172, 16..=31)                 // 172.16.0.0/12
-        | (192, 168)                     // 192.168.0.0/16
-        | (169, 254)                     // 169.254.0.0/16 (Link-Local)
-    )
-}
 
 fn format_number(n: u32) -> String {
     let s = n.to_string();
