@@ -1,5 +1,4 @@
 use clap::Parser;
-use goblin::pe::PE;
 use serde::Serialize;
 use sha2::{Sha256, Digest};
 use std::fs;
@@ -15,97 +14,8 @@ use std::process;
 // ─────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
-//  ŞÜPHELİ API LİSTESİ — Zararlı Yazılımlarda Sık Kullanılan
+//  (Eski bağımlılıklar ve listeler kaldırıldı)
 // ═══════════════════════════════════════════════════════════════
-
-const SUSPICIOUS_APIS: &[&str] = &[
-    // ── Bellek Manipülasyonu ──
-    "VirtualAlloc",
-    "VirtualAllocEx",
-    "VirtualProtect",
-    "VirtualProtectEx",
-    "VirtualFree",
-    // ── Süreç Enjeksiyonu ──
-    "CreateRemoteThread",
-    "CreateRemoteThreadEx",
-    "WriteProcessMemory",
-    "ReadProcessMemory",
-    "NtWriteVirtualMemory",
-    "QueueUserAPC",
-    // ── DLL / Kod Yükleme ──
-    "LoadLibraryA",
-    "LoadLibraryW",
-    "LoadLibraryExA",
-    "LoadLibraryExW",
-    "GetProcAddress",
-    "LdrLoadDll",
-    // ── Süreç / Thread Yönetimi ──
-    "OpenProcess",
-    "CreateProcessA",
-    "CreateProcessW",
-    "ShellExecuteA",
-    "ShellExecuteW",
-    "WinExec",
-    "CreateThread",
-    "SuspendThread",
-    "ResumeThread",
-    "TerminateProcess",
-    // ── Dosya Sistemi ──
-    "CreateFileA",
-    "CreateFileW",
-    "WriteFile",
-    "DeleteFileA",
-    "DeleteFileW",
-    "MoveFileA",
-    "MoveFileW",
-    // ── Kayıt Defteri (Registry) ──
-    "RegOpenKeyExA",
-    "RegOpenKeyExW",
-    "RegSetValueExA",
-    "RegSetValueExW",
-    "RegCreateKeyExA",
-    "RegCreateKeyExW",
-    // ── Ağ / İnternet ──
-    "InternetOpenA",
-    "InternetOpenW",
-    "InternetOpenUrlA",
-    "InternetOpenUrlW",
-    "HttpOpenRequestA",
-    "HttpSendRequestA",
-    "URLDownloadToFileA",
-    "URLDownloadToFileW",
-    "WSAStartup",
-    "connect",
-    "send",
-    "recv",
-    // ── Anti-Debug / Anti-Analysis ──
-    "IsDebuggerPresent",
-    "CheckRemoteDebuggerPresent",
-    "NtQueryInformationProcess",
-    "GetTickCount",
-    "QueryPerformanceCounter",
-    "OutputDebugStringA",
-    // ── Kripto / Şifreleme ──
-    "CryptEncrypt",
-    "CryptDecrypt",
-    "CryptAcquireContextA",
-    "CryptCreateHash",
-    // ── Token / Yetki Yükseltme ──
-    "AdjustTokenPrivileges",
-    "OpenProcessToken",
-    "LookupPrivilegeValueA",
-    // ── Servis Yönetimi ──
-    "CreateServiceA",
-    "CreateServiceW",
-    "StartServiceA",
-    "StartServiceW",
-    // ── Pano / Keylogger ──
-    "SetWindowsHookExA",
-    "SetWindowsHookExW",
-    "GetAsyncKeyState",
-    "GetKeyState",
-    "GetClipboardData",
-];
 
 // ═══════════════════════════════════════════════════════════════
 //  CI/CD UYUMLU VERİ YAPILARI (JSON Çıktı Şeması)
@@ -167,9 +77,12 @@ struct Cli {
 }
 
 fn main() {
-    print_banner();
-
     let cli = Cli::parse();
+
+    if !cli.json {
+        print_banner();
+    }
+
     let file_path = &cli.file;
 
     // ── Dosyanın var olup olmadığını kontrol et ──
@@ -214,15 +127,17 @@ fn main() {
         .unwrap_or_else(|| "<bilinmeyen>".to_string());
 
     // ── Temel dosya bilgisi çıktısı ──
-    println!("  ✔ Analiz edilecek dosya yüklendi:");
-    println!("    ├─ Dosya Adı : {}", file_name);
-    println!("    ├─ Tam Yol   : {}", file_path.display());
-    println!(
-        "    └─ Boyut     : {} bytes ({:.2} KB)",
-        file_size,
-        file_size as f64 / 1024.0
-    );
-    println!();
+    if !cli.json {
+        println!("  ✔ Analiz edilecek dosya yüklendi:");
+        println!("    ├─ Dosya Adı : {}", file_name);
+        println!("    ├─ Tam Yol   : {}", file_path.display());
+        println!(
+            "    └─ Boyut     : {} bytes ({:.2} KB)",
+            file_size,
+            file_size as f64 / 1024.0
+        );
+        println!();
+    }
 
     // ── OOM Koruması: Pumped malware savunması (256 MB limit) ──
     const MAX_FILE_SIZE: u64 = 268_435_456; // 256 MB
@@ -469,18 +384,6 @@ fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u
 // ═══════════════════════════════════════════════════════════════
 //  YARDIMCI FONKSİYONLAR
 // ═══════════════════════════════════════════════════════════════
-
-fn format_number(n: u32) -> String {
-    let s = n.to_string();
-    let mut result = String::new();
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push('.');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}
 
 fn print_banner() {
     println!(
