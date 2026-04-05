@@ -135,6 +135,7 @@ struct SectionInfo {
     isim: String,
     raw_size: u32,
     virtual_size: u32,
+    virtual_address: u64,
     entropy: f64,
 }
 
@@ -275,13 +276,71 @@ fn main() {
         format: format_str,
     };
 
-    // Şimdilik derlenmesi için file_info'yu bastırıyoruz (veya analiz fonksiyonuna aktaracağız)
-    if cli.json {
-        // İleride AnalysisReport içine koyulacak
-    }
-
     // ── Dosya Analizi (goblin ile otomatik format tespiti) ──
     let (sections, entry_point, import_count) = analyze_executable(&file_data);
+
+    // ── Sezgisel (Heuristic) Analiz Motoru ──
+    let mut is_packed = false;
+    let mut warnings = Vec::new();
+    let mut entry_point_entropy = 0.0;
+
+    for sec in &sections {
+        // Entry point adresi bu section'ın sanal alanına (virtual address space) düşüyor mu?
+        if entry_point >= sec.virtual_address && entry_point < (sec.virtual_address + sec.virtual_size as u64) {
+            entry_point_entropy = sec.entropy;
+            if sec.entropy > 7.0 {
+                warnings.push("Kritik: Entry Point yüksek entropili bir bölümde".to_string());
+            }
+        }
+
+        // UPX vb. packerlar orijinal import tablosunu siler, sadece LoadLibrary/GetProcAddress kalır.
+        // Aynı zamanda text (kod) bölümünün entropisi aşırı yüksektir.
+        let is_code_section = sec.isim.contains(".text") || sec.isim.contains("CODE");
+        if is_code_section && sec.entropy > 7.2 && import_count < 5 {
+            is_packed = true;
+            let msg = "Kesinlikle Sıkıştırılmış (Packed) - Antivirüs Atlatma Şüphesi".to_string();
+            if !warnings.contains(&msg) {
+                warnings.push(msg);
+            }
+        }
+    }
+
+    let heuristics = HeuristicResult {
+        is_packed,
+        entry_point_entropy,
+        warnings,
+    };
+
+    let report = AnalysisReport {
+        file_info,
+        sections,
+        heuristics,
+    };
+
+    // ── Çıktıyı Ekrana Yazdırma ──
+    if cli.json {
+        match serde_json::to_string_pretty(&report) {
+            Ok(json_output) => println!("{}", json_output),
+            Err(e) => eprintln!("  [HATA] JSON oluşturulamadı: {}", e),
+        }
+    } else {
+        println!("  ── Sezgisel Analiz Özeti ─────────────────────────────────");
+        println!("    ├─ Hedef Dosya : {} ({})", report.file_info.dosya_adi, report.file_info.format);
+        println!("    ├─ SHA-256     : {}", report.file_info.sha256_hash);
+        println!("    ├─ Import API  : {}", import_count);
+        println!("    ├─ EP Entropisi: {:.4}", report.heuristics.entry_point_entropy);
+        println!("    ├─ Packed/Kripto: {}", if report.heuristics.is_packed { "EVET [!]" } else { "HAYIR" });
+        println!("    └─ Bildirimler :");
+        
+        if report.heuristics.warnings.is_empty() {
+            println!("       ✔ Temiz, olağandışı packer/kripto belirtisi yok.");
+        } else {
+            for warn in &report.heuristics.warnings {
+                println!("       [!] {}", warn);
+            }
+        }
+        println!();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -363,6 +422,7 @@ fn analyze_pe(pe: &goblin::pe::PE, file_data: &[u8]) -> (Vec<SectionInfo>, u64, 
             isim,
             raw_size,
             virtual_size: s.virtual_size,
+            virtual_address: s.virtual_address as u64,
             entropy,
         });
     }
@@ -394,6 +454,7 @@ fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u
             isim,
             raw_size: raw_size as u32,
             virtual_size: s.sh_size as u32,
+            virtual_address: s.sh_addr as u64,
             entropy,
         });
     }
