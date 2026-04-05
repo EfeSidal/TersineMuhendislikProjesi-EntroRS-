@@ -1,4 +1,5 @@
 use clap::Parser;
+use goblin::pe::PE;
 use serde::Serialize;
 use sha2::{Sha256, Digest};
 use std::fs;
@@ -14,8 +15,97 @@ use std::process;
 // ─────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
-//  (Eski bağımlılıklar ve listeler kaldırıldı)
+//  ŞÜPHELİ API LİSTESİ — Zararlı Yazılımlarda Sık Kullanılan
 // ═══════════════════════════════════════════════════════════════
+
+const SUSPICIOUS_APIS: &[&str] = &[
+    // ── Bellek Manipülasyonu ──
+    "VirtualAlloc",
+    "VirtualAllocEx",
+    "VirtualProtect",
+    "VirtualProtectEx",
+    "VirtualFree",
+    // ── Süreç Enjeksiyonu ──
+    "CreateRemoteThread",
+    "CreateRemoteThreadEx",
+    "WriteProcessMemory",
+    "ReadProcessMemory",
+    "NtWriteVirtualMemory",
+    "QueueUserAPC",
+    // ── DLL / Kod Yükleme ──
+    "LoadLibraryA",
+    "LoadLibraryW",
+    "LoadLibraryExA",
+    "LoadLibraryExW",
+    "GetProcAddress",
+    "LdrLoadDll",
+    // ── Süreç / Thread Yönetimi ──
+    "OpenProcess",
+    "CreateProcessA",
+    "CreateProcessW",
+    "ShellExecuteA",
+    "ShellExecuteW",
+    "WinExec",
+    "CreateThread",
+    "SuspendThread",
+    "ResumeThread",
+    "TerminateProcess",
+    // ── Dosya Sistemi ──
+    "CreateFileA",
+    "CreateFileW",
+    "WriteFile",
+    "DeleteFileA",
+    "DeleteFileW",
+    "MoveFileA",
+    "MoveFileW",
+    // ── Kayıt Defteri (Registry) ──
+    "RegOpenKeyExA",
+    "RegOpenKeyExW",
+    "RegSetValueExA",
+    "RegSetValueExW",
+    "RegCreateKeyExA",
+    "RegCreateKeyExW",
+    // ── Ağ / İnternet ──
+    "InternetOpenA",
+    "InternetOpenW",
+    "InternetOpenUrlA",
+    "InternetOpenUrlW",
+    "HttpOpenRequestA",
+    "HttpSendRequestA",
+    "URLDownloadToFileA",
+    "URLDownloadToFileW",
+    "WSAStartup",
+    "connect",
+    "send",
+    "recv",
+    // ── Anti-Debug / Anti-Analysis ──
+    "IsDebuggerPresent",
+    "CheckRemoteDebuggerPresent",
+    "NtQueryInformationProcess",
+    "GetTickCount",
+    "QueryPerformanceCounter",
+    "OutputDebugStringA",
+    // ── Kripto / Şifreleme ──
+    "CryptEncrypt",
+    "CryptDecrypt",
+    "CryptAcquireContextA",
+    "CryptCreateHash",
+    // ── Token / Yetki Yükseltme ──
+    "AdjustTokenPrivileges",
+    "OpenProcessToken",
+    "LookupPrivilegeValueA",
+    // ── Servis Yönetimi ──
+    "CreateServiceA",
+    "CreateServiceW",
+    "StartServiceA",
+    "StartServiceW",
+    // ── Pano / Keylogger ──
+    "SetWindowsHookExA",
+    "SetWindowsHookExW",
+    "GetAsyncKeyState",
+    "GetKeyState",
+    "GetClipboardData",
+];
 
 // ═══════════════════════════════════════════════════════════════
 //  CI/CD UYUMLU VERİ YAPILARI (JSON Çıktı Şeması)
@@ -201,17 +291,18 @@ fn main() {
 
     for sec in &sections {
         // Entry point adresi bu section'ın sanal alanına (virtual address space) düşüyor mu?
-        if entry_point >= sec.virtual_address && entry_point < (sec.virtual_address + sec.virtual_size as u64) {
+        let is_ep_section = entry_point >= sec.virtual_address && entry_point < (sec.virtual_address + sec.virtual_size as u64);
+
+        if is_ep_section {
             entry_point_entropy = sec.entropy;
             if sec.entropy > 7.0 {
                 warnings.push("Kritik: Entry Point yüksek entropili bir bölümde".to_string());
             }
         }
 
-        // UPX vb. packerlar orijinal import tablosunu siler, sadece LoadLibrary/GetProcAddress kalır.
-        // Aynı zamanda text (kod) bölümünün entropisi aşırı yüksektir.
-        let is_code_section = sec.isim.contains(".text") || sec.isim.contains("CODE");
-        if is_code_section && sec.entropy > 7.2 && import_count < 5 {
+        // YENİ KURAL: İsim umurumuzda değil. 
+        // Eğer HERHANGİ bir bölümün entropisi > 7.2 ise VE import tablosu çok küçükse (< 10) bu %100 paketlenmiştir.
+        if sec.entropy > 7.2 && import_count < 10 {
             is_packed = true;
             let msg = "Kesinlikle Sıkıştırılmış (Packed) - Antivirüs Atlatma Şüphesi".to_string();
             if !warnings.contains(&msg) {
@@ -384,6 +475,18 @@ fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u
 // ═══════════════════════════════════════════════════════════════
 //  YARDIMCI FONKSİYONLAR
 // ═══════════════════════════════════════════════════════════════
+
+fn format_number(n: u32) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push('.');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
+}
 
 fn print_banner() {
     println!(
