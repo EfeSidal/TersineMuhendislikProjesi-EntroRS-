@@ -281,7 +281,7 @@ fn main() {
     }
 
     // ── Dosya Analizi (goblin ile otomatik format tespiti) ──
-    analyze_executable(&file_data);
+    let (sections, entry_point, import_count) = analyze_executable(&file_data);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -319,29 +319,18 @@ fn calculate_entropy(data: &[u8]) -> f64 {
 //  DOSYA ANALİZ FONKSİYONLARI (goblin)
 // ═══════════════════════════════════════════════════════════════
 
-/// Ana analiz fonksiyonu — goblin ile dosya formatını otomatik tespit eder.
-fn analyze_executable(data: &[u8]) {
+/// Ana analiz fonksiyonu — goblin ile dosya formatını tespit edip ilgili ayrıştırıcıya yönlendirir.
+fn analyze_executable(data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
     match goblin::Object::parse(data) {
         Ok(goblin::Object::PE(pe)) => {
-            let bitness = if pe.is_64 { "PE32+ (64-bit)" } else { "PE32 (32-bit)" };
-            println!("  ── PE (Portable Executable) Analizi ──────────────────────");
-            println!();
-            println!("  ✔ Geçerli PE dosyası tespit edildi: {}", bitness);
-            println!();
-            analyze_pe_sections(&pe, data);
-            analyze_pe_imports(&pe);
+            analyze_pe(&pe, data)
         }
         Ok(goblin::Object::Elf(elf)) => {
-            let bitness = if elf.is_64 { "ELF64 (64-bit)" } else { "ELF32 (32-bit)" };
-            println!("  ── ELF (Executable and Linkable Format) Analizi ─────────");
-            println!();
-            println!("  ✔ Geçerli ELF dosyası tespit edildi: {}", bitness);
-            println!();
-            analyze_elf_sections(&elf, data);
+            analyze_elf(&elf, data)
         }
         Ok(_) => {
             eprintln!("  [UYARI] Desteklenmeyen dosya formatı.");
-            eprintln!("          Bu araç PE ve ELF dosyalarını desteklemektedir.");
+            eprintln!("          Bu araç yalnızca PE ve ELF dosyalarını desteklemektedir.");
             process::exit(1);
         }
         Err(e) => {
@@ -353,290 +342,67 @@ fn analyze_executable(data: &[u8]) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  PE BÖLÜM (SECTION) ANALİZİ
-// ─────────────────────────────────────────────────────────────
-
-struct SectionRow {
-    name: String,
-    raw_size: u32,
-    virtual_size: u32,
-    entropy: f64,
-}
-
-/// PE dosyasının bölümlerini entropi ile birlikte analiz eder (goblin).
-fn analyze_pe_sections(pe: &PE, file_data: &[u8]) {
-    let sections = &pe.sections;
-    let section_count = sections.len();
-
-    let rows: Vec<SectionRow> = sections.iter().map(|s| {
-        let name = s.name().unwrap_or("<bilinmeyen>").to_string();
+/// PE formatı için bölüm, giriş noktası ve import analizi.
+fn analyze_pe(pe: &goblin::pe::PE, file_data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
+    let mut sections = Vec::new();
+    for s in &pe.sections {
+        let isim = s.name().unwrap_or("<bilinmeyen>").to_string();
         let start = s.pointer_to_raw_data as usize;
         let raw_size = s.size_of_raw_data;
         let end = start + raw_size as usize;
+        
         let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
             &file_data[start..end]
         } else {
             &[]
         };
+
         let entropy = calculate_entropy(section_data);
-        SectionRow {
-            name,
+        
+        sections.push(SectionInfo {
+            isim,
             raw_size,
             virtual_size: s.virtual_size,
             entropy,
-        }
-    }).collect();
+        });
+    }
 
-    print_section_table(section_count, &rows);
+    let entry_point_addr = pe.entry as u64;
+    let import_count = pe.imports.len();
+
+    (sections, entry_point_addr, import_count)
 }
 
-// ─────────────────────────────────────────────────────────────
-//  ELF BÖLÜM (SECTION) ANALİZİ
-// ─────────────────────────────────────────────────────────────
-
-/// ELF dosyasının bölümlerini entropi ile birlikte analiz eder (goblin).
-fn analyze_elf_sections(elf: &goblin::elf::Elf, file_data: &[u8]) {
-    let sections = &elf.section_headers;
-    let section_count = sections.len();
-
-    let rows: Vec<SectionRow> = sections.iter().map(|s| {
-        let name = elf.shdr_strtab.get_at(s.sh_name).unwrap_or("<bilinmeyen>").to_string();
+/// ELF formatı için bölüm, giriş noktası ve dinamik sembol analizi.
+fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
+    let mut sections = Vec::new();
+    for s in &elf.section_headers {
+        let isim = elf.shdr_strtab.get_at(s.sh_name).unwrap_or("<bilinmeyen>").to_string();
         let start = s.sh_offset as usize;
-        let size = s.sh_size as usize;
-        let end = start + size;
+        let raw_size = s.sh_size as usize;
+        let end = start + raw_size;
+
         let section_data = if start < file_data.len() && end <= file_data.len() && start < end {
             &file_data[start..end]
         } else {
             &[]
         };
+
         let entropy = calculate_entropy(section_data);
-        SectionRow {
-            name,
-            raw_size: size as u32,
+
+        sections.push(SectionInfo {
+            isim,
+            raw_size: raw_size as u32,
             virtual_size: s.sh_size as u32,
             entropy,
-        }
-    }).collect();
-
-    print_section_table(section_count, &rows);
-}
-
-fn entropy_label(entropy: f64) -> &'static str {
-    if entropy > 7.0 {
-        "[!] Yüksek Entropi (Paketlenmiş/Şifrelenmiş)"
-    } else if entropy > 6.0 {
-        "[~] Sıkıştırılmış/Yoğun Veri"
-    } else {
-        ""
-    }
-}
-
-fn print_section_table(section_count: usize, rows: &[SectionRow]) {
-    println!(
-        "  ── Bölüm Tablosu ({} bölüm bulundu) ──────────────────────────────────",
-        section_count
-    );
-    println!();
-    println!(
-        "  {:<4} {:<12} {:>14} {:>14} {:>10}   {}",
-        "#", "Bölüm Adı", "Raw Size", "Virtual Size", "Entropy", "Durum"
-    );
-    println!("  {}", "─".repeat(88));
-
-    for (i, row) in rows.iter().enumerate() {
-        let label = entropy_label(row.entropy);
-        println!(
-            "  {:<4} {:<12} {:>10} B {:>10} B {:>10.4}   {}",
-            i + 1,
-            row.name,
-            format_number(row.raw_size),
-            format_number(row.virtual_size),
-            row.entropy,
-            label
-        );
+        });
     }
 
-    println!("  {}", "─".repeat(88));
-    println!();
+    let entry_point_addr = elf.entry;
+    // ELF dosyalarında dışa bağımlılık listesi için dinamik semboller iyi bir göstergedir
+    let import_count = elf.dynsyms.len();
 
-    if !rows.is_empty() {
-        let entropies: Vec<f64> = rows.iter().map(|r| r.entropy).collect();
-        let max_e = entropies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_e = entropies.iter().cloned().fold(f64::INFINITY, f64::min);
-        let avg_e = entropies.iter().sum::<f64>() / entropies.len() as f64;
-        let high_count = entropies.iter().filter(|&&e| e > 7.0).count();
-
-        println!("  ── Entropi Özeti ─────────────────────────────────────────");
-        println!("    ├─ En Düşük  : {:.4}", min_e);
-        println!("    ├─ Ortalama  : {:.4}", avg_e);
-        println!("    ├─ En Yüksek : {:.4}", max_e);
-
-        if high_count > 0 {
-            println!(
-                "    └─ ⚠ {} bölüm yüksek entropiye sahip (>7.0) — Paketleme/şifreleme şüphesi!",
-                high_count
-            );
-        } else {
-            println!("    └─ ✔ Yüksek entropi tespit edilmedi.");
-        }
-        println!();
-    }
-
-    println!("  [BİLGİ] Bölüm analizi ve entropi taraması tamamlandı.");
-    println!();
-}
-
-// ─────────────────────────────────────────────────────────────
-//  PE IAT (IMPORT ADDRESS TABLE) ANALİZİ
-// ─────────────────────────────────────────────────────────────
-
-const MAX_FUNCTIONS_PER_DLL: usize = 10;
-
-fn is_suspicious_api(name: &str) -> bool {
-    SUSPICIOUS_APIS.iter().any(|&api| api == name)
-}
-
-struct DllImportInfo {
-    dll_name: String,
-    functions: Vec<FunctionInfo>,
-}
-
-struct FunctionInfo {
-    name: String,
-    suspicious: bool,
-}
-
-/// PE dosyasının import tablosunu analiz eder (goblin).
-fn analyze_pe_imports(pe: &PE) {
-    println!("  ── Import Address Table (IAT) Analizi ────────────────────");
-    println!();
-
-    let imports = &pe.imports;
-    if imports.is_empty() {
-        println!("    Import tablosu boş veya bulunamadı.");
-        println!();
-        return;
-    }
-
-    // Import'ları DLL bazında grupla
-    let mut dll_map: std::collections::BTreeMap<String, Vec<FunctionInfo>> =
-        std::collections::BTreeMap::new();
-
-    for import in imports {
-        let dll_name = import.dll.to_string();
-        let fn_name = if import.name.is_empty() {
-            format!("Ordinal({})", import.ordinal)
-        } else {
-            import.name.to_string()
-        };
-        let suspicious = is_suspicious_api(&fn_name);
-        dll_map
-            .entry(dll_name)
-            .or_default()
-            .push(FunctionInfo { name: fn_name, suspicious });
-    }
-
-    let dll_data: Vec<DllImportInfo> = dll_map
-        .into_iter()
-        .map(|(dll_name, functions)| DllImportInfo { dll_name, functions })
-        .collect();
-
-    print_import_table(&dll_data);
-}
-
-fn print_import_table(dll_data: &[DllImportInfo]) {
-    if dll_data.is_empty() {
-        println!("    Import tablosu boş veya bulunamadı.");
-        println!();
-        return;
-    }
-
-    let total_dlls = dll_data.len();
-    let total_functions: usize = dll_data.iter().map(|d| d.functions.len()).sum();
-    let total_suspicious: usize = dll_data
-        .iter()
-        .flat_map(|d| d.functions.iter())
-        .filter(|f| f.suspicious)
-        .count();
-
-    println!(
-        "  ✔ {} DLL, toplam {} fonksiyon tespit edildi.",
-        total_dlls, total_functions
-    );
-    println!();
-
-    for (dll_idx, dll) in dll_data.iter().enumerate() {
-        let is_last_dll = dll_idx == total_dlls - 1;
-        let dll_prefix = if is_last_dll { "└─" } else { "├─" };
-        let child_prefix = if is_last_dll { "   " } else { "│  " };
-
-        let dll_suspicious_count = dll.functions.iter().filter(|f| f.suspicious).count();
-        let dll_warning = if dll_suspicious_count > 0 {
-            format!("  ⚠ {} şüpheli API", dll_suspicious_count)
-        } else {
-            String::new()
-        };
-
-        println!(
-            "  {} 📦 {} ({} fonksiyon){}",
-            dll_prefix,
-            dll.dll_name,
-            dll.functions.len(),
-            dll_warning
-        );
-
-        let display_count = dll.functions.len().min(MAX_FUNCTIONS_PER_DLL);
-        let remaining = dll.functions.len().saturating_sub(MAX_FUNCTIONS_PER_DLL);
-
-        for (fn_idx, func) in dll.functions.iter().take(display_count).enumerate() {
-            let is_last_fn = fn_idx == display_count - 1 && remaining == 0;
-            let fn_prefix = if is_last_fn { "└─" } else { "├─" };
-
-            if func.suspicious {
-                println!(
-                    "  {} {} {} [!] KRİTİK API ÇAĞRISI",
-                    child_prefix, fn_prefix, func.name
-                );
-            } else {
-                println!("  {} {} {}", child_prefix, fn_prefix, func.name);
-            }
-        }
-
-        if remaining > 0 {
-            println!("  {} └─ ... ve {} fonksiyon daha", child_prefix, remaining);
-        }
-
-        println!();
-    }
-
-    // ── IAT Özeti ──
-    println!("  ── IAT Özeti ─────────────────────────────────────────────");
-    println!("    ├─ Toplam DLL       : {}", total_dlls);
-    println!("    ├─ Toplam Fonksiyon : {}", total_functions);
-
-    if total_suspicious > 0 {
-        println!(
-            "    └─ ⚠ {} şüpheli/kritik API çağrısı tespit edildi!",
-            total_suspicious
-        );
-        println!();
-
-        println!("  ── Tespit Edilen Kritik API Çağrıları ────────────────────");
-        for dll in dll_data {
-            for func in &dll.functions {
-                if func.suspicious {
-                    println!("    [!] {} → {}", dll.dll_name, func.name);
-                }
-            }
-        }
-    } else {
-        println!("    └─ ✔ Şüpheli API çağrısı tespit edilmedi.");
-    }
-
-    println!();
-    println!("  [BİLGİ] IAT analizi tamamlandı.");
-    println!();
+    (sections, entry_point_addr, import_count)
 }
 
 // ═══════════════════════════════════════════════════════════════
