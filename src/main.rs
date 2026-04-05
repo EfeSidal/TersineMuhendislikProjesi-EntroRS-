@@ -1,5 +1,7 @@
 use clap::Parser;
 use goblin::pe::PE;
+use serde::Serialize;
+use sha2::{Sha256, Digest};
 use std::fs;
 use std::path::PathBuf;
 use std::process;
@@ -105,6 +107,45 @@ const SUSPICIOUS_APIS: &[&str] = &[
     "GetClipboardData",
 ];
 
+// ═══════════════════════════════════════════════════════════════
+//  CI/CD UYUMLU VERİ YAPILARI (JSON Çıktı Şeması)
+// ═══════════════════════════════════════════════════════════════
+
+/// En dış analiz raporu yapısı — tüm sonuçları kapsar.
+#[derive(Debug, Serialize)]
+struct AnalysisReport {
+    file_info: FileInfo,
+    sections: Vec<SectionInfo>,
+    heuristics: HeuristicResult,
+}
+
+/// Dosya kimlik bilgileri.
+#[derive(Debug, Serialize)]
+struct FileInfo {
+    dosya_adi: String,
+    dosya_yolu: String,
+    boyut: u64,
+    sha256_hash: String,
+    format: String,
+}
+
+/// Bölüm (section) entropi bilgisi.
+#[derive(Debug, Serialize)]
+struct SectionInfo {
+    isim: String,
+    raw_size: u32,
+    virtual_size: u32,
+    entropy: f64,
+}
+
+/// Sezgisel (heuristic) analiz sonuçları.
+#[derive(Debug, Serialize)]
+struct HeuristicResult {
+    is_packed: bool,
+    entry_point_entropy: f64,
+    warnings: Vec<String>,
+}
+
 /// Zararlı yazılım statik analiz aracı.
 #[derive(Parser, Debug)]
 #[command(
@@ -118,6 +159,10 @@ struct Cli {
     /// Analiz edilecek dosyanın yolu
     #[arg(short = 'f', long = "file", value_name = "DOSYA_YOLU")]
     file: PathBuf,
+
+    /// Çıktıyı JSON formatında yazdır (CI/CD entegrasyonu için)
+    #[arg(short = 'j', long = "json")]
+    json: bool,
 }
 
 fn main() {
