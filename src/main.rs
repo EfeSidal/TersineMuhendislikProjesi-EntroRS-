@@ -248,6 +248,38 @@ fn main() {
         }
     };
 
+    // ── SHA-256 Hash Hesaplama ──
+    let mut hasher = Sha256::new();
+    hasher.update(&file_data);
+    let sha256_hash = format!("{:x}", hasher.finalize());
+
+    // ── Magic Bytes Kontrolü & Format Belirleme ──
+    let format_str = if file_data.starts_with(b"MZ") {
+        "PE".to_string()
+    } else if file_data.starts_with(b"\x7FELF") {
+        "ELF".to_string()
+    } else {
+        eprintln!(
+            "  [HATA] Desteklenmeyen Format.\n\
+             \n  Dosya PE veya ELF formatında değil (MZ veya \\x7FELF imzası bulunamadı).\n"
+        );
+        process::exit(1);
+    };
+
+    // ── FileInfo Doldurma ──
+    let file_info = FileInfo {
+        dosya_adi: file_name,
+        dosya_yolu: file_path.to_string_lossy().to_string(),
+        boyut: file_size,
+        sha256_hash,
+        format: format_str,
+    };
+
+    // Şimdilik derlenmesi için file_info'yu bastırıyoruz (veya analiz fonksiyonuna aktaracağız)
+    if cli.json {
+        // İleride AnalysisReport içine koyulacak
+    }
+
     // ── Dosya Analizi (goblin ile otomatik format tespiti) ──
     analyze_executable(&file_data);
 }
