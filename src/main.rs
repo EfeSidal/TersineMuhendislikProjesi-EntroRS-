@@ -107,6 +107,17 @@ const SUSPICIOUS_APIS: &[&str] = &[
     "GetClipboardData",
 ];
 
+/// Verilen API isminin şüpheli (Suspicious) API listesinde olup olmadığını kontrol eder.
+///
+/// # Parametreler
+/// * `api_name`: Kontrol edilecek API fonksiyon ismi.
+///
+/// # Dönüş Değeri
+/// * `bool`: Liste içindeyse `true`, değilse `false`.
+fn is_suspicious_api(api_name: &str) -> bool {
+    SUSPICIOUS_APIS.contains(&api_name)
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  CI/CD UYUMLU VERİ YAPILARI (JSON Çıktı Şeması)
 // ═══════════════════════════════════════════════════════════════
@@ -321,16 +332,15 @@ fn main() {
     let sha256_hash = format!("{:x}", hasher.finalize());
 
     // ── Magic Bytes Kontrolü & Format Belirleme ──
-    let format_str = if file_data.starts_with(b"MZ") {
-        "PE".to_string()
-    } else if file_data.starts_with(b"\x7FELF") {
-        "ELF".to_string()
-    } else {
-        eprintln!(
-            "  [HATA] Desteklenmeyen Format.\n\
-             \n  Dosya PE veya ELF formatında değil (MZ veya \\x7FELF imzası bulunamadı).\n"
-        );
-        process::exit(1);
+    let format_str = match detect_format(&file_data) {
+        Some(f) => f.to_string(),
+        None => {
+            eprintln!(
+                "  [HATA] Desteklenmeyen Format.\n\
+                 \n  Dosya PE veya ELF formatında değil (MZ veya \\x7FELF imzası bulunamadı).\n"
+            );
+            process::exit(1);
+        }
     };
 
     // ── FileInfo Doldurma ──
@@ -603,6 +613,23 @@ fn format_number(n: u32) -> String {
     result.chars().rev().collect()
 }
 
+/// Verilen byte dizisinin başındaki sihirli byte'ları (Magic Bytes) kontrol ederek formatı belirler.
+///
+/// # Parametreler
+/// * `data`: Dosyanın ham byte içeriği.
+///
+/// # Dönüş Değeri
+/// * `Option<&'static str>`: Bilinirse "PE" veya "ELF", aksi halde `None`.
+fn detect_format(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(b"MZ") {
+        Some("PE")
+    } else if data.starts_with(b"\x7FELF") {
+        Some("ELF")
+    } else {
+        None
+    }
+}
+
 /// Uygulama başladığında ekrana basılan ASCII Art ve isim/sürüm bilgilerini (Banner) yazdıran fonksiyon.
 ///
 /// `--json` bayrağı ile sessiz veya otomatik (CI/CD) modda çalıştırılmayan standart terminal oturumlarında 
@@ -662,5 +689,24 @@ mod tests {
         assert_eq!(format_number(999), "999");
         assert_eq!(format_number(1000), "1.000");
         assert_eq!(format_number(1048576), "1.048.576");
+    }
+
+    #[test]
+    fn test_entropy_accuracy() {
+        let entropy = calculate_entropy(b"AAABBBCCC");
+        assert!((entropy - 1.5849625).abs() < 0.00001);
+    }
+
+    #[test]
+    fn test_magic_byte_detection() {
+        assert_eq!(detect_format(b"MZ\x90\x00"), Some("PE"));
+        assert_eq!(detect_format(b"\x7FELF\x02"), Some("ELF"));
+    }
+
+    #[test]
+    fn test_suspicious_api_detection() {
+        assert!(is_suspicious_api("VirtualAlloc"));
+        assert!(is_suspicious_api("IsDebuggerPresent"));
+        assert!(!is_suspicious_api("printf"));
     }
 }
