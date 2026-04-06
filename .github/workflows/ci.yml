@@ -42,6 +42,11 @@ jobs:
       - name: Run Tests
         run: cargo test --verbose
 
+      - name: Security Audit (cargo audit)
+        run: |
+          cargo install cargo-audit
+          cargo audit
+
   release:
     name: Release
     needs: build_and_test
