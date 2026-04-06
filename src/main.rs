@@ -166,6 +166,73 @@ struct Cli {
     json: bool,
 }
 
+/// Dosyanın varlığını, tipini ve boyutunu doğrular, ardından güvenli bir şekilde belleğe okur.
+/// OOM (Out of Memory) koruması ve limit kontrollerini içerir.
+fn read_and_validate_file(path: &PathBuf) -> Vec<u8> {
+    // ── Dosyanın var olup olmadığını kontrol et ──
+    if !path.exists() {
+        eprintln!(
+            "\n  [HATA] Belirtilen dosya bulunamadı: \"{}\"\n\
+             \n  Lütfen dosya yolunu kontrol edip tekrar deneyin.\n\
+             \n  Kullanım: EntroRS --file <DOSYA_YOLU>\n",
+            path.display()
+        );
+        process::exit(1);
+    }
+
+    // ── Bir dizin değil, dosya olduğundan emin ol ──
+    if path.is_dir() {
+        eprintln!(
+            "\n  [HATA] Belirtilen yol bir dizin, dosya değil: \"{}\"\n\
+             \n  Lütfen geçerli bir dosya yolu belirtin.\n",
+            path.display()
+        );
+        process::exit(1);
+    }
+
+    // ── Dosya meta verisini oku ──
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "\n  [HATA] Dosya meta verisi okunamadı: \"{}\"\n\
+                 \n  Sebep: {}\n",
+                path.display(),
+                e
+            );
+            process::exit(1);
+        }
+    };
+
+    let file_size = metadata.len();
+
+    // ── OOM Koruması: Pumped malware savunması (256 MB limit) ──
+    const MAX_FILE_SIZE: u64 = 268_435_456; // 256 MB
+    if file_size > MAX_FILE_SIZE {
+        eprintln!(
+            "\n  [HATA] Dosya boyutu çok büyük ({:.2} MB). RAM limitini (256 MB) aşıyor.\
+             \n         Analiz reddedildi.\n",
+            file_size as f64 / (1024.0 * 1024.0)
+        );
+        process::exit(1);
+    }
+
+    // FIXME: Çok büyük dosyalar (örn: >2GB) için memory-mapped file (mmap) sistemine geçilmeli
+    // ── Dosyayı belleğe oku ──
+    match fs::read(path) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!(
+                "  [HATA] Dosya belleğe okunamadı: \"{}\"\n\
+                 \n  Sebep: {}\n",
+                path.display(),
+                e
+            );
+            process::exit(1);
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -175,42 +242,9 @@ fn main() {
 
     let file_path = &cli.file;
 
-    // ── Dosyanın var olup olmadığını kontrol et ──
-    if !file_path.exists() {
-        eprintln!(
-            "\n  [HATA] Belirtilen dosya bulunamadı: \"{}\"\n\
-             \n  Lütfen dosya yolunu kontrol edip tekrar deneyin.\n\
-             \n  Kullanım: EntroRS --file <DOSYA_YOLU>\n",
-            file_path.display()
-        );
-        process::exit(1);
-    }
+    let file_data = read_and_validate_file(file_path);
 
-    // ── Bir dizin değil, dosya olduğundan emin ol ──
-    if file_path.is_dir() {
-        eprintln!(
-            "\n  [HATA] Belirtilen yol bir dizin, dosya değil: \"{}\"\n\
-             \n  Lütfen geçerli bir dosya yolu belirtin.\n",
-            file_path.display()
-        );
-        process::exit(1);
-    }
-
-    // ── Dosya meta verisini oku ──
-    let metadata = match fs::metadata(file_path) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!(
-                "\n  [HATA] Dosya meta verisi okunamadı: \"{}\"\n\
-                 \n  Sebep: {}\n",
-                file_path.display(),
-                e
-            );
-            process::exit(1);
-        }
-    };
-
-    let file_size = metadata.len();
+    let file_size = file_data.len() as u64;
     let file_name = file_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -228,31 +262,6 @@ fn main() {
         );
         println!();
     }
-
-    // ── OOM Koruması: Pumped malware savunması (256 MB limit) ──
-    const MAX_FILE_SIZE: u64 = 268_435_456; // 256 MB
-    if file_size > MAX_FILE_SIZE {
-        eprintln!(
-            "\n  [HATA] Dosya boyutu çok büyük ({:.2} MB). RAM limitini (256 MB) aşıyor.\
-             \n         Analiz reddedildi.\n",
-            file_size as f64 / (1024.0 * 1024.0)
-        );
-        process::exit(1);
-    }
-
-    // ── Dosyayı belleğe oku ──
-    let file_data = match fs::read(file_path) {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!(
-                "  [HATA] Dosya belleğe okunamadı: \"{}\"\n\
-                 \n  Sebep: {}\n",
-                file_path.display(),
-                e
-            );
-            process::exit(1);
-        }
-    };
 
     // ── SHA-256 Hash Hesaplama ──
     let mut hasher = Sha256::new();
@@ -356,6 +365,7 @@ fn main() {
 /// Verilen byte dizisinin Shannon Entropisini hesaplar.
 ///
 /// Formül: H(X) = - Σ P(xᵢ) × log₂(P(xᵢ))
+// TODO: Performans için entropy hesaplaması paralel thread'lere (Rayon) taşınacak
 fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
