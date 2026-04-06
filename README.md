@@ -1,5 +1,10 @@
 # 🦀 EntroRS - Static Malware Analysis & PE Analyzer
 
+![Rust](https://img.shields.io/badge/Language-Rust-black?style=flat-square&logo=rust)
+![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
+![CI/CD](https://github.com/EfeSidal/TersineMuhendislikProjesi-EntroRS-/actions/workflows/ci.yml/badge.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows)
+
 [🇹🇷 Türkçe](#turkce) | [🇬🇧 English](#english)
 
 ---
@@ -17,6 +22,18 @@ EntroRS, Rust diliyle geliştirilmiş, Windows PE (Portable Executable) dosyalar
 *   **Şüpheli API Tespiti:** Anti-debugging (`IsDebuggerPresent`), bellek manipülasyonu (`VirtualAlloc`) ve dinamik yükleme (`LoadLibraryA`) gibi kritik fonksiyonların otomatik olarak bayraklanması.
 *   **Strings Analysis:** Dosya içindeki hardcoded URL, IP adresi ve kritik dosya yollarının Regex motoruyla ayıklanması.
 
+### 🛡️ MITRE ATT&CK Matrisi
+
+| ID | İsim | Açıklama |
+| :--- | :--- | :--- |
+| **T1027** | Obfuscated Files or Information | Entropi tabanlı paketlenmiş/şifrelenmiş bölüm tespiti. |
+| **T1140** | Deobfuscate/Decode Files or Information | Yüksek entropili giriş noktaları üzerinden gizleme tespiti. |
+| **T1129** | Shared Modules | IAT analizi ile dış kütüphane bağımlılıklarının tespiti. |
+| **T1082** | System Information Discovery | Anti-debug/Anti-VM amaçlı kullanılan API'lerin tespiti. |
+
+### 🦀 Neden Rust?
+Rust, çöp toplayıcı (garbage collector) olmadan bellek güvenliği garantileri, maksimum performans için sıfır maliyetli soyutlamalar (zero-cost abstractions) ve modern bir sistem programlama dili olarak C/C++ hızını sunar. Bu özellikler, zararlı olabilecek ikili (binary) verileri güvenli ve hızlı bir şekilde işlemek için EntroRS'u ideal bir araç yapar.
+
 ### 📊 Teknik Detaylar: Entropy Motoru
 Bu araç, siber güvenlikte "Static Analysis" disiplini üzerine inşa edilmiştir. Zararlı yazılımların kod gizleme (obfuscation) tekniklerini tespit etmek için dosyanın her bir PE bölümüne **Shannon Entropisi** algoritmasını uygular:
 
@@ -29,7 +46,7 @@ Bu matematiksel model, verinin rastgelelik seviyesini 0.0 ile 8.0 arasında puan
 **Derleme (Release Mode):**
 ```bash
 cargo build --release
-````
+```
 
 **Çalıştırma:**
 
@@ -51,8 +68,20 @@ EntroRS is a high-performance static malware analysis tool developed in Rust, ca
   * **Section Parsing:** Raw Size vs Virtual Size correlation to identify potential packing.
   * **Shannon Entropy:** Mathematical data density analysis to expose encrypted or packed sections.
   * **IAT (Import Address Table) Analysis:** Mapping of externally imported system DLLs and functions.
-  * **Suspicious API Detection:** Automated flagging of critical functions such as anti-debugging (`IsDebuggerPresent`), memory manipulation (`VirtualAlloc`), and dynamic loading (`LoadLibraryA`).
+  * **Suspicious API Detection:** Automated flagging of critical functions such such as anti-debugging (`IsDebuggerPresent`), memory manipulation (`VirtualAlloc`), and dynamic loading (`LoadLibraryA`).
   * **Strings Analysis:** Regex-based extraction of hardcoded URLs, IP addresses, and critical file paths.
+
+### 🛡️ MITRE ATT&CK Matrix
+
+| ID | Name | Description |
+| :--- | :--- | :--- |
+| **T1027** | Obfuscated Files or Information | Entropy-based detection of packed/encrypted sections. |
+| **T1140** | Deobfuscate/Decode Files or Information | Identifying obfuscation logic through high-entropy entry points. |
+| **T1129** | Shared Modules | IAT analysis to identify external library dependencies. |
+| **T1082** | System Information Discovery | Detecting APIs used for anti-debug or anti-VM finger-printing. |
+
+### 🦀 Why Rust?
+Rust provides memory safety guarantees without a garbage collector, zero-cost abstractions for maximum performance, and the speed of C/C++ while being a modern and safe systems programming language. This makes it ideal for handling potentially malicious binary data safely and efficiently.
 
 ### 📊 Technical Details: Entropy Engine
 
