@@ -111,7 +111,14 @@ const SUSPICIOUS_APIS: &[&str] = &[
 //  CI/CD UYUMLU VERİ YAPILARI (JSON Çıktı Şeması)
 // ═══════════════════════════════════════════════════════════════
 
-/// En dış analiz raporu yapısı — tüm sonuçları kapsar.
+/// En dış analiz raporu yapısı — bir dosyanın tüm statik analiz sonuçlarını kapsar.
+///
+/// Bu yapı, JSON formatında serileştirilebilmesi için tasarlanmıştır. CI/CD
+/// boru hatlarında ve SIEM gibi üçüncü parti güvenlik araçlarında kullanılabilir.
+///
+/// * `file_info`: Analiz edilen dosyanın yolları ve hash değerleri gibi temel kimlik bilgileri.
+/// * `sections`: PE/ELF dosyasının içerdiği tüm bölümlerin ve entropi değerlerinin listesi.
+/// * `heuristics`: Paketleyici veya şifreleyici şüphesi barındıran kritik uyarılar.
 #[derive(Debug, Serialize)]
 struct AnalysisReport {
     file_info: FileInfo,
@@ -119,7 +126,16 @@ struct AnalysisReport {
     heuristics: HeuristicResult,
 }
 
-/// Dosya kimlik bilgileri.
+/// Hedef dosyanın kimlik ve metadata bilgileri.
+///
+/// Dosyanın işletim sistemindeki yolundan kriptografik hash değerine kadar
+/// temel tanımlayıcı özelliklerini taşır.
+///
+/// * `dosya_adi`: Hedef dosyanın adı (ör: `malware.exe`).
+/// * `dosya_yolu`: Dosyanın bulunduğu dizinin tam yolu.
+/// * `boyut`: Dosyanın byte cinsinden disk boyutu.
+/// * `sha256_hash`: Zararlı yazılım analizinde kritik öneme sahip SHA-256 özeti.
+/// * `format`: Dosyanın çalışma zamanı formatı (ör: `PE` veya `ELF`).
 #[derive(Debug, Serialize)]
 struct FileInfo {
     dosya_adi: String,
@@ -129,7 +145,16 @@ struct FileInfo {
     format: String,
 }
 
-/// Bölüm (section) entropi bilgisi.
+/// PE veya ELF dosyalarındaki çalıştırılabilir veya veri bölümlerine (sections) ait analiz bilgisi.
+///
+/// Her bir bölümün boyutunu ve içindeki verinin entropisini barındırır. Yüksek entropi,
+/// bölümün muhtemelen paketlenmiş veya şifrelenmiş olduğuna işaret eder.
+///
+/// * `isim`: Bölümün adı (ör: `.text`, `.data`, `.rsrc`).
+/// * `raw_size`: Disk üzerindeki ham boyutu (byte).
+/// * `virtual_size`: Belleğe yüklendiğindeki boyutu (byte).
+/// * `virtual_address`: Bölümün bellekteki sanal adres offset'i.
+/// * `entropy`: Shannon entropi değeri (0.0 ile 8.0 arasında).
 #[derive(Debug, Serialize)]
 struct SectionInfo {
     isim: String,
@@ -139,7 +164,13 @@ struct SectionInfo {
     entropy: f64,
 }
 
-/// Sezgisel (heuristic) analiz sonuçları.
+/// Sezgisel (Heuristic) analiz motorunun karar ve uyarılarını barındırır.
+///
+/// Analiz aracının şüpheli durumlar için yaptığı çıkarımları sunar.
+///
+/// * `is_packed`: İstatiksel verilere dayanarak dosyanın paketlenmiş/şifrelenmiş olup olmadığı durumu.
+/// * `entry_point_entropy`: Kodun ilk çalışmaya başladığı (Entry Point) bölümün entropi değeri.
+/// * `warnings`: Tespit edilen potansiyel zararlı yazılım tekniklerine dair uyarı mesajları listesi.
 #[derive(Debug, Serialize)]
 struct HeuristicResult {
     is_packed: bool,
@@ -147,7 +178,10 @@ struct HeuristicResult {
     warnings: Vec<String>,
 }
 
-/// Zararlı yazılım statik analiz aracı.
+/// EntroRS zararlı yazılım statik analiz aracının komut satırı argümanları.
+///
+/// `clap` kütüphanesi kullanılarak tanımlanmıştır. Kullanıcıdan dosya yolu ve yapılandırma
+/// ayarları (örn. JSON çıktı) almayı sağlar.
 #[derive(Parser, Debug)]
 #[command(
     name = "EntroRS",
@@ -166,8 +200,16 @@ struct Cli {
     json: bool,
 }
 
-/// Dosyanın varlığını, tipini ve boyutunu doğrular, ardından güvenli bir şekilde belleğe okur.
-/// OOM (Out of Memory) koruması ve limit kontrollerini içerir.
+/// Belirtilen dosya yolundaki zararlı yazılım örneğini okur ve güvenlik/limit doğrulamalarını yapar.
+///
+/// OOM (Out of Memory) saldırılarına karşı `MAX_FILE_SIZE` limiti (örn: 256 MB) uygulayarak,
+/// kasıtlı olarak devasa boyutlara ulaştırılmış (pumped) malware dosyalarının sistemi çökertmesini engeller.
+///
+/// # Parametreler
+/// * `path`: Okunacak ve analiz edilecek dosyanın tam argüman yolu (`PathBuf` referansı).
+///
+/// # Dönüş Değeri
+/// * `Vec<u8>`: Başarıyla okunmuş dosyanın byte dizisi. Herhangi bir hatada (dosya bulunamaması, okuma izni olmaması, boyut sınırının aşılması) programı `process::exit(1)` ile sonlandırır.
 fn read_and_validate_file(path: &PathBuf) -> Vec<u8> {
     // ── Dosyanın var olup olmadığını kontrol et ──
     if !path.exists() {
@@ -233,6 +275,16 @@ fn read_and_validate_file(path: &PathBuf) -> Vec<u8> {
     }
 }
 
+/// Uygulamanın giriş noktası (Entry Point).
+///
+/// Bu fonksiyon sırasıyla aşağıdaki adımları koordine eder:
+/// 1. Komut satırı argümanlarını (CLI) ayrıştırır.
+/// 2. Girdi dosyasını doğrular ve OOM limitlerine uygun şekilde belleğe yükler (`read_and_validate_file`).
+/// 3. Dosyanın metaverilerini (boyut, SHA-256 hash) oluşturur.
+/// 4. Magic bytes ile dosya formatını `PE` veya `ELF` olarak belirler.
+/// 5. Elde edilen byte dizisini ayrıştırmak üzere `analyze_executable` motoruna gönderir.
+/// 6. Çıkan sonuçlara göre sezgisel kuralları çalıştırır (örn. entropi ve IAT kontrolü).
+/// 7. Sonucu kullanıcı tercihine göre JSON (`--json`) veya insan okuyabilir tablo formatında konsola basar.
 fn main() {
     let cli = Cli::parse();
 
@@ -362,9 +414,19 @@ fn main() {
 //  MATEMATİKSEL MOTOR — SHANNON ENTROPİSİ
 // ═══════════════════════════════════════════════════════════════
 
-/// Verilen byte dizisinin Shannon Entropisini hesaplar.
+/// Belirtilen bir byte dizisinin (veri yığınının) Shannon Entropisini (Shannon Entropy) hesaplar.
+///
+/// Entropi, veri içerisindeki "rastgelelik" (randomness) miktarını ölçen matematiksel bir kavramdır.
+/// Normal program kodları genelde 4.0 - 6.0 arası bir değere sahipken, sıkıştırılmış (packed) 
+/// veya şifrelenmiş (encrypted) bölümler 7.0 ile 8.0 arası değerler üretir.
 ///
 /// Formül: H(X) = - Σ P(xᵢ) × log₂(P(xᵢ))
+///
+/// # Parametreler
+/// * `data`: Entropisi hesaplanacak ham byte dizisi.
+///
+/// # Dönüş Değeri
+/// * `f64`: 0.0 (tamamen tahmin edilebilir) ile 8.0 (tamamen rastgele) arasındaki entropi değeri.
 // TODO: Performans için entropy hesaplaması paralel thread'lere (Rayon) taşınacak
 fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
@@ -394,7 +456,20 @@ fn calculate_entropy(data: &[u8]) -> f64 {
 //  DOSYA ANALİZ FONKSİYONLARI (goblin)
 // ═══════════════════════════════════════════════════════════════
 
-/// Ana analiz fonksiyonu — goblin ile dosya formatını tespit edip ilgili ayrıştırıcıya yönlendirir.
+/// Hedef çalıştırılabilir dosyanın (Executable) formatını dinamik olarak algılayan ve uygun ayrıştırıcıya yönlendiren motor.
+///
+/// `goblin` kütüphanesini kullanarak analiz sürecini başlatır. Dosyanın PE (Windows) veya ELF (Linux)
+/// formatında olduğunu tespit ederek arka plandaki `analyze_pe` veya `analyze_elf` fonksiyonlarına yönlendirir.
+/// Desteklenmeyen veya bozuk formatlarda programı güvenle kapatır.
+///
+/// # Parametreler
+/// * `data`: Belleğe yüklenmiş hedefin byte dizisi (raw verisi).
+///
+/// # Dönüş Değeri
+/// Bir tuple döndürür: `(Bölümler Listesi, Entry Point Adresi, Dışa Bağımlılık/Import Sayısı)`
+/// * `Vec<SectionInfo>`: Analiz edilen dosya içerisindeki bölümler ve her birinin boyutu/entropisi.
+/// * `u64`: Sürecin işletim sisteminde başlayacağı sanal Entry Point adresi.
+/// * `usize`: IAT (Import Address Table) veya dinamik semboller tablosundaki dış kütüphane fonksiyonlarının sayısı.
 fn analyze_executable(data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
     match goblin::Object::parse(data) {
         Ok(goblin::Object::PE(pe)) => {
@@ -417,7 +492,17 @@ fn analyze_executable(data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
     }
 }
 
-/// PE formatı için bölüm, giriş noktası ve import analizi.
+/// Portable Executable (PE - Windows) dosyalarını ayrıştıran alt analiz motoru.
+///
+/// PE dosyasının içindeki `.text`, `.data`, `.rsrc` gibi bölümleri (section) ayıklar,
+/// entropilerini hesaplar ve IAT (Import Address Table) tablosunun boyutunu ölçer.
+///
+/// # Parametreler
+/// * `pe`: `goblin::pe::PE` türünde ayrıştırılmış Portable Executable yapısı referansı.
+/// * `file_data`: Entropi hesaplamaları için gereken dosyanın orijinal ham bayt dizisi.
+///
+/// # Dönüş Değeri
+/// * `(Vec<SectionInfo>, u64, usize)`: Sırasıyla bölümler, entry point adresi ve import sayısı.
 fn analyze_pe(pe: &goblin::pe::PE, file_data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
     let mut sections = Vec::new();
     for s in &pe.sections {
@@ -449,7 +534,18 @@ fn analyze_pe(pe: &goblin::pe::PE, file_data: &[u8]) -> (Vec<SectionInfo>, u64, 
     (sections, entry_point_addr, import_count)
 }
 
-/// ELF formatı için bölüm, giriş noktası ve dinamik sembol analizi.
+/// Executable and Linkable Format (ELF - Linux) dosyalarını ayrıştıran alt analiz motoru.
+///
+/// Linux sistemlerinde kullanılan dosyaların Section Header tablolarını ayrıştırarak
+/// bellek yapılarını inceler, boyut ve entropi ölçümlerini gerçekleştirir. Dışa bağımlılık 
+/// listesini analiz etmek için `dynsyms` (dinamik semboller) sayısına bakar.
+///
+/// # Parametreler
+/// * `elf`: `goblin::elf::Elf` türünde ayrıştırılmış yapı.
+/// * `file_data`: Orijinal dosyanın ham byte dizisi.
+///
+/// # Dönüş Değeri
+/// * `(Vec<SectionInfo>, u64, usize)`: Sırasıyla bölümler, entry point adresi ve import (sembol) sayısı.
 fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u64, usize) {
     let mut sections = Vec::new();
     for s in &elf.section_headers {
@@ -486,6 +582,15 @@ fn analyze_elf(elf: &goblin::elf::Elf, file_data: &[u8]) -> (Vec<SectionInfo>, u
 //  YARDIMCI FONKSİYONLAR
 // ═══════════════════════════════════════════════════════════════
 
+/// Büyük sayıları binlik ayrımlarla formatlayan yardımcı fonksiyon.
+///
+/// Konsol çıktılarını daha okunabilir kılmak için kullanılır (örneğin 1048576 sayısını 1.048.576 yapar).
+///
+/// # Parametreler
+/// * `n`: Formatlanacak pozitif tam sayı (u32).
+///
+/// # Dönüş Değeri
+/// * `String`: Formatlanmış okunabilir String değeri.
 fn format_number(n: u32) -> String {
     let s = n.to_string();
     let mut result = String::new();
@@ -498,6 +603,10 @@ fn format_number(n: u32) -> String {
     result.chars().rev().collect()
 }
 
+/// Uygulama başladığında ekrana basılan ASCII Art ve isim/sürüm bilgilerini (Banner) yazdıran fonksiyon.
+///
+/// `--json` bayrağı ile sessiz veya otomatik (CI/CD) modda çalıştırılmayan standart terminal oturumlarında 
+/// aracın görsel kimliğini ve temel amacını konsola yansıtır.
 fn print_banner() {
     println!(
         r#"
