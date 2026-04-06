@@ -47,6 +47,12 @@ $$H(X) = - \sum P(x_i) \log_2 P(x_i)$$
 
 Bu matematiksel model, verinin rastgelelik seviyesini 0.0 ile 8.0 arasında puanlar. 7.0 üzerindeki değerler, analiz edilen bölümün yüksek ihtimalle sıkıştırılmış veya kriptografik bir işleme maruz kaldığını gösterir.
 
+## 🎬 Demo
+
+Aracın çalışma anını, PE analiz sürecini ve risk skorlamasını aşağıdaki videodan izleyebilirsiniz:
+
+[![Demo Video](https://img.youtube.com/vi/yfGaLHRuOGc/maxresdefault.jpg)](https://youtu.be/yfGaLHRuOGc)
+
 ### 🛠 Kurulum ve Kullanım
 
 **Derleme (Release Mode):**
@@ -96,6 +102,12 @@ This tool is built upon the core principles of the "Static Analysis" discipline 
 $$H(X) = - \sum P(x_i) \log_2 P(x_i)$$
 
 This mathematical model scores the randomness of the data on a scale of 0.0 to 8.0. Values above 7.0 strongly indicate that the analyzed section has been subjected to compression or cryptographic routines.
+
+## 🎬 Demo
+
+Watch the tool in action — PE analysis process and risk scoring:
+
+[![Demo Video](https://img.youtube.com/vi/yfGaLHRuOGc/maxresdefault.jpg)](https://youtu.be/yfGaLHRuOGc)
 
 ### 🛠 Installation and Usage
 
