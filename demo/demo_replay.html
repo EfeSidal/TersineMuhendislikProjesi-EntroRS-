@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EntroRS Project Demo</title>
+    <style>
+        body { background: #0c0c0c; color: #ccc; font-family: 'Consolas', 'Courier New', monospace; margin: 0; overflow: hidden; }
+        #terminal { padding: 40px; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; }
+        .prompt { color: #0f0; margin-right: 10px; }
+        .command { color: #fff; font-weight: bold; }
+        .output { color: #aaa; white-space: pre-wrap; margin: 10px 0 20px 20px; border-left: 2px solid #333; padding-left: 15px; }
+        .cursor { display: inline-block; width: 10px; height: 1.2em; background: #fff; vertical-align: middle; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .banner { color: #0088ff; font-weight: bold; font-size: 1.2em; border: 1px solid #0088ff; padding: 10px; margin-bottom: 20px; text-align: center; }
+        #report-iframe { width: 100%; height: 100vh; border: none; display: none; }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <iframe id="report-iframe" src="../demo_report.html"></iframe>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const iframe = document.getElementById('report-iframe');
+
+        const scenes = [
+            { cmd: "cargo build --release", output: "   Compiling EntroRS v0.1.0\n    Finished release [optimized] target(s) in 1.87s\n  ✔ Build successful: target/release/EntroRS.exe" },
+            { cmd: "./target/release/EntroRS.exe --help", output: "  EntroRS Malware Analyzer (v0.1.0)\n  Usage: EntroRS.exe [OPTIONS] --file <DOSYA_YOLU>\n\n  Options:\n    -f, --file <DOSYA_YOLU>  Analiz edilecek dosyanın yolu\n    -m, --format <FORMAT>    Çıktı formatı (terminal, json, html) [default: terminal]\n    -o, --output <RAPOR>    Raporu dosyaya kaydet" },
+            { cmd: "./target/release/EntroRS.exe -f EntroRS.exe", output: "  ✔ Analiz edilecek dosya yüklendi:\n    ├─ Dosya Adı : EntroRS.exe\n    └─ Boyut     : 7424000 bytes (7250 KB)\n\n  ── Analiz Özeti ──────────────────────────────────────────\n    ├─ Hedef Dosya : EntroRS.exe (PE)\n    ├─ Risk Skoru  : 100 (CRITICAL)\n    ├─ SHA-256     : f327d5595ba933708805938c472cc... \n    ├─ Import API  : 99\n    └─ Bildirimler :\n       [!] Şüpheli APIler: [\"VirtualAlloc\", \"IsDebuggerPresent\", ...]" },
+            { cmd: "Generating HTML Report...", output: "  [OK] Rapor kaydedildi: demo_report.html\nOpening report window..." },
+            { type: "switch_to_html" },
+            { type: "wait", duration: 5000 },
+            { type: "switch_to_terminal" },
+            { cmd: "tree /F /A", output: ".\n+---.github\n|   \\---workflows\n|           ci.yml\n+---docs\n|       architecture.md\n|       MITRE_ATTACK_mapping.md\n+---src\n|       main.rs\n|   Cargo.toml\n|   Dockerfile\n|   README.md" }
+        ];
+
+        async function typeText(target, text, speed = 30) {
+            for (let i = 0; i < text.length; i++) {
+                target.textContent += text[i];
+                await new Promise(r => setTimeout(r, speed));
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+        }
+
+        async function runDemo() {
+            for (const scene of scenes) {
+                if (scene.type === "switch_to_html") {
+                    terminal.style.display = 'none';
+                    iframe.style.display = 'block';
+                    await new Promise(r => setTimeout(r, 8000));
+                    continue;
+                }
+                if (scene.type === "switch_to_terminal") {
+                    iframe.style.display = 'none';
+                    terminal.style.display = 'flex';
+                    continue;
+                }
+                if (scene.type === "wait") {
+                    await new Promise(r => setTimeout(r, scene.duration));
+                    continue;
+                }
+
+                const line = document.createElement('div');
+                line.innerHTML = '<span class="prompt">PS D:\\EntroRS&gt;</span><span class="command"></span><span class="cursor"></span>';
+                terminal.appendChild(line);
+
+                const cmdSpan = line.querySelector('.command');
+                await typeText(cmdSpan, scene.cmd);
+                line.querySelector('.cursor').remove();
+
+                await new Promise(r => setTimeout(r, 500));
+
+                const outDiv = document.createElement('div');
+                outDiv.className = 'output';
+                terminal.appendChild(outDiv);
+                await typeText(outDiv, scene.output, 5);
+                
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            const final = document.createElement('div');
+            final.className = 'banner';
+            final.textContent = "DEMO COMPLETE - EntroRS: Professional Malware Analysis in Rust";
+            terminal.appendChild(final);
+        }
+
+        window.onload = runDemo;
+    </script>
+</body>
+</html>

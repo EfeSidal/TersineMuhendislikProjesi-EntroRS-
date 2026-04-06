@@ -1,0 +1,20 @@
+
+    <html><head><style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; }
+        .container { width: 80%; margin: auto; background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .header { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .risk-box { font-size: 48px; color: #dc3545; font-weight: bold; text-align: center; margin: 20px 0; border: 4px solid #dc3545; padding: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #f8f9fa; }
+    </style></head><body>
+    <div class="container">
+        <div class="header"><h1>EntroRS Analiz Raporu</h1><p>Dosya: EntroRS.exe | Tarih: 2026-04-06 23:34:00</p></div>
+        <div class="risk-box">CRITICAL - RISK: 100/100</div>
+        <h3>Bölüm Analizi (Sections)</h3>
+        <table><tr><th>İsim</th><th>Boyut</th><th>Entropi</th><th>Packed?</th></tr><tr><td>.text</td><td>1652224</td><td>6.2644</td><td>HAYIR</td></tr><tr><td>.rdata</td><td>854016</td><td>5.0543</td><td>HAYIR</td></tr><tr><td>.data</td><td>1024</td><td>1.6048</td><td>HAYIR</td></tr><tr><td>.pdata</td><td>59904</td><td>6.2066</td><td>HAYIR</td></tr><tr><td>.reloc</td><td>25088</td><td>5.4461</td><td>HAYIR</td></tr></table>
+        <h3>Tespit Edilen Şüpheli API ve Stringler</h3>
+        <p><b>APIler:</b> VirtualAlloc, VirtualAllocEx, VirtualProtect, VirtualProtectEx, VirtualFree, CreateRemoteThread, CreateRemoteThreadEx, WriteProcessMemory, ReadProcessMemory, NtWriteVirtualMemory, QueueUserAPC, LoadLibraryA, LoadLibraryW, LoadLibraryExA, LoadLibraryExW, GetProcAddress, LdrLoadDll, OpenProcess, CreateProcessA, CreateProcessW, WinExec, TerminateProcess, IsDebuggerPresent, CheckRemoteDebuggerPresent</p>
+        <p><b>Stringler:</b> https://github.com/clap-rs/clap/issues/rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library, https://github.com/clap-rs/clap/issuesC, https://github.com/clap-rs/clap/issues</p>
+    </div>
+    </body></html>
