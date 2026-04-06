@@ -625,3 +625,42 @@ fn print_banner() {
 "#
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entropy_empty() {
+        // Boş veri entropisi 0 olmalı
+        let data: &[u8] = &[];
+        assert_eq!(calculate_entropy(data), 0.0);
+    }
+
+    #[test]
+    fn test_entropy_homogeneous() {
+        // Tamamen aynı bytelardan oluşan (tekrar eden) verinin entropisi 0 olmalı (rastgelelik yok)
+        let data = vec![0xAA; 100];
+        assert_eq!(calculate_entropy(&data), 0.0);
+    }
+
+    #[test]
+    fn test_entropy_maximum() {
+        // 0'dan 255'e kadar tüm byteları tam olarak birer kez içeren dizi
+        // Mükemmel dağılım, maksimum rastgelelik demektir (Entropi = 8.0)
+        let data: Vec<u8> = (0..=255).collect();
+        let entropy = calculate_entropy(&data);
+        
+        // Kayan noktalı (float) sayılarda eşitlik epsilon (hata payı) ile kontrol edilir
+        assert!((entropy - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_format_number() {
+        // Çıktı formatlayıcı edge-case testleri
+        assert_eq!(format_number(0), "0");
+        assert_eq!(format_number(999), "999");
+        assert_eq!(format_number(1000), "1.000");
+        assert_eq!(format_number(1048576), "1.048.576");
+    }
+}
