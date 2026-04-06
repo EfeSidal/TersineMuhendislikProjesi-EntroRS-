@@ -9,12 +9,6 @@
 
 ---
 
-## 🎬 Demo
-
-![EntroRS Project Demo](demo/project-demo.webp)
-
----
-
 <a id="turkce"></a>
 ## 🇹🇷 Türkçe
 
