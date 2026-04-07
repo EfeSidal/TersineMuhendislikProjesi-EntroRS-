@@ -1,3 +1,19 @@
+<p align="center">
+  <img src="istinye-logo.png" alt="İstinye Üniversitesi" width="220"/>
+</p>
+
+
+### 👤 Proje Bilgileri
+
+| | |
+|---|---|
+| **Öğrenci** | Efe Sidal |
+| **Danışman Hoca** | Keyvan Arasteh |
+| **Üniversite** | İstinye Üniversitesi |
+| **Bölüm** | Bilişim Güvenliği Teknolojisi |
+| **Ders** | Tersine Mühendislik |
+
+
 # 🦀 EntroRS - Static Malware Analysis & PE Analyzer
 
 ![Rust](https://img.shields.io/badge/Language-Rust-black?style=flat-square&logo=rust)
@@ -63,6 +79,21 @@ cargo build --release
 -----
 
 <a id="english"></a>
+
+<p align="center">
+  <img src="istinye-logo.png" alt="İstinye Üniversitesi" width="220"/>
+</p>
+
+
+### 👤 Project Info
+
+| | |
+|---|---|
+| **Student** | Efe Sidal |
+| **Instructor** | Keyvan Arasteh |
+| **University** | Istinye University |
+| **Department** | Information Security Technology |
+| **Course** | Reverse Engineering |
 
 ## 🇬🇧 English
 
