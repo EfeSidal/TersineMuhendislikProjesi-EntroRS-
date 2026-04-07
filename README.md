@@ -1,24 +1,21 @@
 <p align="center">
-  <img src="istinye-logo.png" alt="İstinye Üniversitesi" width="220"/>
+  <img src="https://github.com/user-attachments/assets/5f914303-57e1-4d37-99bd-c368da9900bc" alt="İstinye Üniversitesi" width="300"/>
 </p>
-
 
 ### 👤 Proje Bilgileri
 
 | | |
 |---|---|
-| **Öğrenci** | Efe Sidal |
-| **Danışman Hoca** | Keyvan Arasteh |
+| **Öğrenci** | Gizem Kızılay |
+| **Danışman Eğitmen** | Keyvan Arasteh Abbasabad |
 | **Üniversite** | İstinye Üniversitesi |
-| **Bölüm** | Bilişim Güvenliği Teknolojisi |
-| **Ders** | Tersine Mühendislik |
+| **Ders** | Tersine Mühendislik (Reverse Engineering) |
 
+# 🛡️ Anti-Debug Trap - Dynamic Analysis Evasion & Memory Protection
 
-# 🦀 EntroRS - Static Malware Analysis & PE Analyzer
-
-![Rust](https://img.shields.io/badge/Language-Rust-black?style=flat-square&logo=rust)
+![C++](https://img.shields.io/badge/Language-C++17-00599C?style=flat-square&logo=c%2B%2B)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
-![CI/CD](https://github.com/EfeSidal/TersineMuhendislikProjesi-EntroRS-/actions/workflows/ci.yml/badge.svg)
+[![CI/CD](https://github.com/gizemkizilay/Anti-Debug-Kapani/actions/workflows/build.yml/badge.svg)](https://github.com/gizemkizilay/Anti-Debug-Kapani/actions)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows)
 
 [🇹🇷 Türkçe](#turkce) | [🇬🇧 English](#english)
@@ -28,122 +25,39 @@
 <a id="turkce"></a>
 ## 🇹🇷 Türkçe
 
-EntroRS, Rust diliyle geliştirilmiş, Windows PE (Portable Executable) dosyaları üzerinde çalışan, imza tabanlı ve sezgisel (heuristic) statik analiz gerçekleştiren yüksek performanslı bir güvenlik aracıdır.
+Anti-Debug Trap, C++17 ile Windows x64 mimarisi için geliştirilmiş; uygulamanın kendi çalışma zamanı (runtime) ortamını analiz ederek bir hata ayıklayıcı (debugger) tarafından izlenip izlenmediğini otonom olarak tespit eden ileri seviye bir "Evasion" (Sakınma) mekanizmasıdır.
 
 ### 🚀 Özellikler
-*   **PE Header Analizi:** Dosya mimarisi (x86/x64) ve temel meta verilerin tespiti.
-*   **Section Parsing:** Bölüm adları, Raw Size vs Virtual Size karşılaştırması (Potansiyel packing tespiti).
-*   **Shannon Entropisi:** Veri yoğunluğu analizi ile şifrelenmiş (encrypted) veya paketlenmiş (packed) alanların matematiksel olarak deşifre edilmesi.
-*   **IAT (Import Address Table) Analizi:** Dışarıdan çağrılan sistem DLL'lerinin ve alt fonksiyonlarının haritalandırılması.
-*   **Şüpheli API Tespiti:** Anti-debugging (`IsDebuggerPresent`), bellek manipülasyonu (`VirtualAlloc`) ve dinamik yükleme (`LoadLibraryA`) gibi kritik fonksiyonların otomatik olarak bayraklanması.
-*   **Strings Analysis:** Dosya içindeki hardcoded URL, IP adresi ve kritik dosya yollarının Regex motoruyla ayıklanması.
+* **PEB (Process Environment Block) Analizi:** Windows çekirdeğinin süreç için tuttuğu `BeingDebugged` bayrağının anlık olarak sorgulanması.
+* **Software Breakpoint Avı:** Bellek üzerinde dinamik tarama yapılarak x64dbg/WinDbg gibi araçların enjekte ettiği `0xCC` (INT 3) opcode'larının tespiti.
+* **Dinamik Disassembly:** `Capstone Engine` kütüphanesi kullanılarak, çalışma anında kritik fonksiyonların de-compile edilmesi ve bütünlük doğrulaması.
+* **Silent Exit (Sessiz İnfaz):** Analiz tespit edildiğinde `exit(0)` çağrısı ile analiste hiçbir uyarı, hata mesajı veya "exception" vermeden sürecin anında sonlandırılması.
 
 ### 🛡️ MITRE ATT&CK Matrisi
 
 | ID | İsim | Açıklama |
 | :--- | :--- | :--- |
-| **T1027** | Obfuscated Files or Information | Entropi tabanlı paketlenmiş/şifrelenmiş bölüm tespiti. |
-| **T1140** | Deobfuscate/Decode Files or Information | Yüksek entropili giriş noktaları üzerinden gizleme tespiti. |
-| **T1129** | Shared Modules | IAT analizi ile dış kütüphane bağımlılıklarının tespiti. |
-| **T1082** | System Information Discovery | Anti-debug/Anti-VM amaçlı kullanılan API'lerin tespiti. |
+| **T1622** | Debugger Evasion | PEB blokları üzerinden sürecin bir debugger ile kancalanıp (hook) kancalanmadığının tespiti. |
+| **T1497** | Virtualization/Sandbox Evasion | Çalışma ortamının bir analist tarafından manipüle edildiğinin anlaşılması ve silent-exit uygulanması. |
+| **T1027** | Obfuscated Files or Information | Yazılım kesmelerinin (Software Breakpoints - INT3) tespit edilerek dinamik analizin bloke edilmesi. |
+| **T1012** | Query Registry / System | Windows iç yapılarına (API seviyesinin altına) inerek sistem durumunun doğrulanması. |
 
-### 🦀 Neden Rust?
-Rust, çöp toplayıcı (garbage collector) olmadan bellek güvenliği garantileri, maksimum performans için sıfır maliyetli soyutlamalar (zero-cost abstractions) ve modern bir sistem programlama dili olarak C/C++ hızını sunar. Bu özellikler, zararlı olabilecek ikili (binary) verileri güvenli ve hızlı bir şekilde işlemek için EntroRS'u ideal bir araç yapar.
+### ⚙️ Neden C++ ve Capstone?
+Modern siber güvenlikte sadece geleneksel API çağrılarına (örneğin `IsDebuggerPresent`) güvenmek yeterli değildir; bu çağrılar kolayca yamalanabilir (patching). C++ dili, işletim sistemi çekirdeğine (Windows Kernel) ve bellek adreslerine en alt seviyeden doğrudan erişim sağlar. `Capstone Engine` entegrasyonu ise, bellekteki makine kodunun çalışma anında okunmasını ve dışarıdan yapılan "inline patching" müdahalelerinin tespit edilmesini mümkün kılar.
 
-### 📊 Teknik Detaylar: Entropy Motoru
-Bu araç, siber güvenlikte "Static Analysis" disiplini üzerine inşa edilmiştir. Zararlı yazılımların kod gizleme (obfuscation) tekniklerini tespit etmek için dosyanın her bir PE bölümüne **Shannon Entropisi** algoritmasını uygular:
+### 📊 Teknik Detaylar: Opcode Doğrulama ve INT3 Tarama
+Bu araç, tersine mühendislerin kod akışını durdurmak için kullandığı yazılımsal kesmeleri matematiksel ve yapısal olarak analiz eder. Bellek üzerindeki fonksiyonlar byte dizileri halinde okunur:
 
-$$H(X) = - \sum P(x_i) \log_2 P(x_i)$$
+* Eğer okunan bellek adresinde `0xCC` (INT 3 kesmesi) tespit edilirse.
+* Sistem anında **"Evasion"** moduna geçer ve "Exception Handling" süreçlerine yakalanmamak için standart C kütüphanesi üzerinden süreci yok eder.
 
-Bu matematiksel model, verinin rastgelelik seviyesini 0.0 ile 8.0 arasında puanlar. 7.0 üzerindeki değerler, analiz edilen bölümün yüksek ihtimalle sıkıştırılmış veya kriptografik bir işleme maruz kaldığını gösterir.
+### 🛠 Kurulum ve Derleme (Release Mode)
 
-## 🎬 Demo
-
-Aracın çalışma anını, PE analiz sürecini ve risk skorlamasını aşağıdaki videodan izleyebilirsiniz:
-
-[![Demo Video](https://img.youtube.com/vi/yfGaLHRuOGc/maxresdefault.jpg)](https://youtu.be/yfGaLHRuOGc)
-
-### 🛠 Kurulum ve Kullanım
-
-**Derleme (Release Mode):**
-```bash
-cargo build --release
-```
-
-**Çalıştırma:**
+Projeyi bağımlılıklarıyla (Capstone) beraber derlemek için:
 
 ```bash
-./target/release/EntroRS.exe --file <analiz_edilecek_dosya_yolu>
-```
-
------
-
-<a id="english"></a>
-
-<p align="center">
-  <img src="istinye-logo.png" alt="İstinye Üniversitesi" width="220"/>
-</p>
-
-
-### 👤 Project Info
-
-| | |
-|---|---|
-| **Student** | Efe Sidal |
-| **Instructor** | Keyvan Arasteh |
-| **University** | Istinye University |
-| **Department** | Information Security Technology |
-| **Course** | Reverse Engineering |
-
-## 🇬🇧 English
-
-EntroRS is a high-performance static malware analysis tool developed in Rust, capable of signature-based and heuristic static analysis on Windows PE (Portable Executable) files.
-
-### 🚀 Features
-
-  * **PE Header Analysis:** File architecture (x86/x64) and basic metadata detection.
-  * **Section Parsing:** Raw Size vs Virtual Size correlation to identify potential packing.
-  * **Shannon Entropy:** Mathematical data density analysis to expose encrypted or packed sections.
-  * **IAT (Import Address Table) Analysis:** Mapping of externally imported system DLLs and functions.
-  * **Suspicious API Detection:** Automated flagging of critical functions such such as anti-debugging (`IsDebuggerPresent`), memory manipulation (`VirtualAlloc`), and dynamic loading (`LoadLibraryA`).
-  * **Strings Analysis:** Regex-based extraction of hardcoded URLs, IP addresses, and critical file paths.
-
-### 🛡️ MITRE ATT&CK Matrix
-
-| ID | Name | Description |
-| :--- | :--- | :--- |
-| **T1027** | Obfuscated Files or Information | Entropy-based detection of packed/encrypted sections. |
-| **T1140** | Deobfuscate/Decode Files or Information | Identifying obfuscation logic through high-entropy entry points. |
-| **T1129** | Shared Modules | IAT analysis to identify external library dependencies. |
-| **T1082** | System Information Discovery | Detecting APIs used for anti-debug or anti-VM finger-printing. |
-
-### 🦀 Why Rust?
-Rust provides memory safety guarantees without a garbage collector, zero-cost abstractions for maximum performance, and the speed of C/C++ while being a modern and safe systems programming language. This makes it ideal for handling potentially malicious binary data safely and efficiently.
-
-### 📊 Technical Details: Entropy Engine
-
-This tool is built upon the core principles of the "Static Analysis" discipline in cybersecurity. To detect malware code obfuscation techniques, it applies the **Shannon Entropy** algorithm to each PE section:
-
-$$H(X) = - \sum P(x_i) \log_2 P(x_i)$$
-
-This mathematical model scores the randomness of the data on a scale of 0.0 to 8.0. Values above 7.0 strongly indicate that the analyzed section has been subjected to compression or cryptographic routines.
-
-## 🎬 Demo
-
-Watch the tool in action — PE analysis process and risk scoring:
-
-[![Demo Video](https://img.youtube.com/vi/yfGaLHRuOGc/maxresdefault.jpg)](https://youtu.be/yfGaLHRuOGc)
-
-### 🛠 Installation and Usage
-
-**Build (Release Mode):**
-
-```bash
-cargo build --release
-```
-
-**Usage:**
-
-```bash
-./target/release/EntroRS.exe --file <target_file_path>
-```
+git clone [https://github.com/gizemkizilay/Anti-Debug-Kapani.git](https://github.com/gizemkizilay/Anti-Debug-Kapani.git)
+cd Anti-Debug-Kapani
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
