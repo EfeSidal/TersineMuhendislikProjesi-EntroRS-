@@ -3,15 +3,7 @@
 </p>
 
 
-### 👤 Proje Bilgileri
 
-| | |
-|---|---|
-| **Öğrenci** | Efe Sidal |
-| **Danışman Hoca** | Keyvan Arasteh |
-| **Üniversite** | İstinye Üniversitesi |
-| **Bölüm** | Bilişim Güvenliği Teknolojisi |
-| **Ders** | Tersine Mühendislik |
 
 
 # 🦀 EntroRS - Static Malware Analysis & PE Analyzer
@@ -22,7 +14,15 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows)
 
 [🇹🇷 Türkçe](#turkce) | [🇬🇧 English](#english)
+### 👤 Proje Bilgileri
 
+| | |
+|---|---|
+| **Öğrenci** | Efe Sidal |
+| **Danışman Hoca** | Keyvan Arasteh |
+| **Üniversite** | İstinye Üniversitesi |
+| **Bölüm** | Bilişim Güvenliği Teknolojisi |
+| **Ders** | Tersine Mühendislik |
 ---
 
 <a id="turkce"></a>
