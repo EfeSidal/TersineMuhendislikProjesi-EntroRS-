@@ -84,6 +84,12 @@ cargo build --release
   <img src="istinye-logo.png" alt="İstinye Üniversitesi" width="220"/>
 </p>
 
+# 🦀 EntroRS - Static Malware Analysis & PE Analyzer
+
+![Rust](https://img.shields.io/badge/Language-Rust-black?style=flat-square&logo=rust)
+![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
+![CI/CD](https://github.com/EfeSidal/TersineMuhendislikProjesi-EntroRS-/actions/workflows/ci.yml/badge.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows)
 
 ### 👤 Project Info
 
